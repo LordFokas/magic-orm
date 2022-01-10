@@ -130,19 +130,21 @@ export class BSO extends DataObject {
 	// READ
 
 	/** Load all BSOs from one table and inflate them */
-	static async all<T extends BSO>(db:Connection, inflate:string = 'all') // @ts-ignore
+	static async all<T>(this: typeof BSO & (new (...a:any) => T), db:Connection, inflate:string = 'all') // @ts-ignore
 	:ArrayPromise<T> {
 		return await this.inflate(db, inflate) as T[];
 	}
 
 	/** Load one BSO by UUID and inflate it */
-	static async uuid<T extends BSO>(db:Connection, uuid:string, inflate:string = 'uuid') // @ts-ignore
+	static async uuid<T>(this: typeof BSO & (new (...a:any) => T), db:Connection, uuid:string, inflate:string = 'uuid') // @ts-ignore
 	:ArrayPromise<T> {
 		return await this.inflate(db, inflate, uuid) as T[];
 	}
 
 	/** Query and inflate BSOs. This entails recursion and complexity */
-	static async inflate(db:Connection|false, inflate:string, ...params:(boolean|string|number)[]) : Promise<BSO[] | SelectBuilder> {
+	static async inflate(db:false, inflate:string, ...params:(boolean|string|number)[]) : Promise<SelectBuilder>; // @ts-ignore
+	static async inflate<T>(this: typeof BSO & (new (...a:any) => T), db:Connection, inflate:string, ...params:(boolean|string|number)[]) : ArrayPromise<T>;
+	static async inflate<T>(this: typeof BSO & (new (...a:any) => T), db:Connection|false, inflate:string, ...params:(boolean|string|number)[]) : Promise<T[] | SelectBuilder> {
 		const dloClass = this.dlo as typeof DLO & DLOFunctionHacks;
 		const { self, links, expands } = (this.inflates as InflationMapGeneric<typeof DLO & DLOFunctionHacks>)[inflate];
 
@@ -204,7 +206,7 @@ export class BSO extends DataObject {
 			}
 		}
 
-		return bsos;
+		return bsos as any as T[];
 	}
 
 	/** ??? */

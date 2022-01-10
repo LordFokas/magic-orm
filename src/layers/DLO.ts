@@ -17,7 +17,6 @@ export class DLO extends DataObject {
 	static uuidsize:UUIDSize;
 	static prefix:string; // TN = TableName
 	static table:string; // table_name = TableName
-	static query = {};
 
 	static get bso() : typeof BSO {
 		return (this as any)['$bso'];
@@ -28,13 +27,13 @@ export class DLO extends DataObject {
 	}
 	
 	/** Get all the entities from this table */
-	static async all<T extends DLO>(db:Connection, select:string='*') // @ts-ignore
+	static async all<T>(this: typeof DLO & (new (...a:any) => T), db:Connection, select:string='*') // @ts-ignore
 	:ArrayPromise<T> {
 		return await this.read(db, select) as T[];
 	}
 
 	/** Get one entity from this table, by UUID. */
-	static async uuid<T extends DLO>(db:Connection, uuid:string, select='*') // @ts-ignore
+	static async uuid<T>(this: typeof DLO & (new (...a:any) => T), db:Connection, uuid:string, select='*') // @ts-ignore
 	:ArrayPromise<T> {
 		return await this.read(db, select, [
 			{col: 'uuid', var: uuid}
@@ -42,7 +41,7 @@ export class DLO extends DataObject {
 	}
 
 	/** Get all entities from this table where {field} is in {list}. */
-	static async in<T extends DLO>(db:Connection, field:string, list:string[], select='*') // @ts-ignore
+	static async in<T>(this: typeof DLO & (new (...a:any) => T), db:Connection, field:string, list:string[], select='*') // @ts-ignore
 	:ArrayPromise<T> {
 		return await this.read(db, select, [
 			{col: field, in: list}
@@ -97,7 +96,9 @@ export class DLO extends DataObject {
 	}
 	
 	/** Read one or more records from the database. If Connection === false returns the query builder instead */
-	static async read(db:Connection|false, select:string = '*', filters:Filter[] = []) : Promise<DLO[] | SelectBuilder>{
+	static async read(db:false, select?:string, filters?:Filter[]) : Promise<SelectBuilder>;
+	static async read<T>(this: typeof DLO & (new (...a:any) => T), db:Connection, select?:string, filters?:Filter[]) : Promise<T[]>;
+	static async read<T>(this: typeof DLO & (new (...a:any) => T), db:Connection|false, select:string = '*', filters:Filter[] = []) : Promise<T[] | SelectBuilder>{
 		const query = this.select(select, filters);
 		if(db === false) return query;
 		const result = await query.execute(db);
