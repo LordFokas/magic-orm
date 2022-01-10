@@ -99,10 +99,10 @@ export class BSO extends DataObject {
 	/** Insert all of a BSO's links (parents). These are required before the BSO is inserted */
 	static async #insertLinks(db:Connection, bso:BSO) : Promise<void> {
 		await BSO.forEachLink(bso, async lnk => {
-			const dlo = bso[lnk.linkname] as DLO;
+			const dlo = (bso as any)[lnk.linkname] as DLO;
 			if(!dlo) return;
 			dlo.insert(db);
-			bso[`uuid_${lnk.linkname}`] = dlo.uuid;
+			(bso as any)[`uuid_${lnk.linkname}`] = dlo.uuid;
 		});
 	}
 
@@ -116,11 +116,11 @@ export class BSO extends DataObject {
 	/** Insert this BSO's expands (children). This has to be the last insertion step */
 	static async #insertExpands(db:Connection, bso:BSO) : Promise<void> {
 		await BSO.forEachExpand(bso, async exp => {
-			const dlos = bso[exp.expandname] as DLO[];
+			const dlos = (bso as any)[exp.expandname] as DLO[];
 			if(!dlos || dlos.length < 1) return;
 			const link = this.dlo.linkname;
 			for(const dlo of dlos){
-				dlo[`uuid_${link}`] = bso.uuid;
+				(dlo as any)[`uuid_${link}`] = bso.uuid;
 			}
 			await dlos.insertAll(db);
 		});
@@ -194,13 +194,13 @@ export class BSO extends DataObject {
 						{col: `uuid_${dloClass.linkname}`, var: bso.uuid}
 					]);
 					const exp = type.expandname || (type as any as typeof BSO).dlo.expandname;
-					bso[exp] = dlos;
+					(bso as any)[exp] = dlos;
 				}
 			}else{
 				const type = expand.type;
 				const link = `uuid_${dloClass.linkname}`;
 				const dlos = await type[expand.exec](db, ...expand.params, [{col: link, in: uuids}]);
-				dlos.map(dlo => index[(dlo[link] as string)].useExpand(dlo));
+				dlos.map(dlo => index[((dlo as any)[link] as string)].useExpand(dlo));
 			}
 		}
 
@@ -232,12 +232,12 @@ export class BSO extends DataObject {
 				{col: `uuid_${linkname}`, var: this.uuid}
 			]);
 			const exp = type.expandname || (type as any as typeof BSO).dlo.expandname;
-			this[exp] = dlos;
+			(this as any)[exp] = dlos;
 		}
 
 		for(const link of links){
 			if(link.type.prototype instanceof BSO){
-				const bsoChild = this[(link.type as any as typeof BSO).dlo.linkname] as BSO;
+				const bsoChild = (this as any)[(link.type as any as typeof BSO).dlo.linkname] as BSO;
 				// @ts-ignore
 				if(bsoChild) await bsoChild.finishInflation(db, ...link.params);
 			}
@@ -278,14 +278,14 @@ export class BSO extends DataObject {
 	/** Use this entity as a link (instance of parent entity) */
 	useLink(dlo:DLO|BSO) : void{
 		const field = (dlo instanceof DLO) ? dlo.$('linkname') : dlo.$('dlo').linkname;
-		this[field] = dlo;
+		(this as any)[field] = dlo;
 	}
 
 	/** Use this entity as an expand (instance of child entity) */
 	useExpand(dlo:DLO|BSO) : void {
 		const field = (dlo instanceof DLO) ? dlo.$('expandname') : dlo.$('dlo').expandname;
-		if(this[field]) (this[field] as (DLO|BSO)[]).push(dlo);
-		else this[field] = [dlo];
+		if((this as any)[field]) ((this as any)[field] as (DLO|BSO)[]).push(dlo);
+		else (this as any)[field] = [dlo];
 	}
 }
 
@@ -307,12 +307,12 @@ export interface LoadParams {
 	params: string[]
 }
 
-export interface LoadParamsLink<T extends typeof DLO | typeof BSO> extends LoadParams { 
+export interface LoadParamsLink<T extends typeof DLO | typeof BSO> extends LoadParams {
 	type: T
 	reverse: boolean
 }
 
-export interface LoadParamsExpand<T extends typeof DLO | typeof BSO> extends LoadParams { 
+export interface LoadParamsExpand<T extends typeof DLO | typeof BSO> extends LoadParams {
 	type: T
 	noBulk: boolean
 }

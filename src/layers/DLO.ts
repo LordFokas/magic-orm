@@ -53,7 +53,7 @@ export class DLO extends DataObject {
 	static #data(dlo:DLO, cols:string[]) : any[] {
 		const vals:any[] = [];
 		for(const col of cols)
-			vals.push(dlo[col]);
+			vals.push((dlo as any)[col]);
 		return vals;
 	}
 
@@ -118,8 +118,8 @@ export class DLO extends DataObject {
 	static #booleans(dlo:DLO) : void {
 		if(Array.isArray(dlo.$('booleans'))){
 			for(const key of dlo.$('booleans')){
-				if(typeof dlo[key] === 'string'){
-					dlo[key] = (dlo[key] === '1');
+				if(typeof (dlo as any)[key] === 'string'){
+					(dlo as any)[key] = ((dlo as any)[key] === '1');
 				}
 			}
 		}
@@ -145,7 +145,7 @@ export class DLO extends DataObject {
 		const prefix = this.$('prefix') + '_';
 		for(const [k, v] of Object.entries(row)){
 			if(k.startsWith(prefix)){
-				this[k.substring(3)] = v;
+				(this as any)[k.substring(3)] = v;
 			}
 		}
 	}

@@ -50,7 +50,6 @@ export class LayeredObject {
 }
 
 export abstract class DataObject extends LayeredObject {
-	[key:string]:boolean|string|number|DataObject|DataObject[]|Function;
 	uuid?: string;
 
 	/**
