@@ -144,7 +144,7 @@ export class BSO extends DataObject {
 	/** Query and inflate BSOs. This entails recursion and complexity */
 	static async inflate(db:Connection|false, inflate:string, ...params:(boolean|string|number)[]) : Promise<BSO[] | SelectBuilder> {
 		const dloClass = this.dlo as typeof DLO & DLOFunctionHacks;
-		const { self, links, expands } = this.inflates[inflate];
+		const { self, links, expands } = (this.inflates as InflationMapGeneric<typeof DLO & DLOFunctionHacks>)[inflate];
 
 		// load self and links' main bodies with a single query
 		const query = await dloClass[self.exec](false, ...params, ...self.params);
@@ -224,7 +224,7 @@ export class BSO extends DataObject {
 
 	/** ??? */
 	async finishInflation(db:Connection, inflate:string, ...params:any[]) : Promise<void> {
-		const { self, links, expands } = (this.$('inflates') as InflationMap)[inflate];
+		const { self, links, expands } = (this.$('inflates') as InflationMapGeneric<typeof DLO & DLOFunctionHacks>)[inflate];
 		const linkname = this.$('dlo').linkname;
 		for(const expand of expands){
 			const type = expand.type;
@@ -293,11 +293,12 @@ interface DLOFunctionHacks { [key:string]: ScaffoldingFunction&LoadingFunction; 
 type ScaffoldingFunction = (c:false, ...$:any[]) => Promise<SelectBuilder>;
 type LoadingFunction = (c:Connection, ...$:any[]) => Promise<DLO[]>;
 
-export interface InflationMap {
+export type InflationMap = InflationMapGeneric<typeof DLO | typeof BSO>;
+export interface InflationMapGeneric<T extends typeof DLO | typeof BSO>{
 	[key:string]: {
 		self: LoadParams
-		links: LoadParamsLink[]
-		expands: LoadParamsExpand[]
+		links: LoadParamsLink<T>[]
+		expands: LoadParamsExpand<T>[]
 	}
 }
 
@@ -306,13 +307,13 @@ export interface LoadParams {
 	params: string[]
 }
 
-export interface LoadParamsLink extends LoadParams { 
-	type: typeof DLO & DLOFunctionHacks
+export interface LoadParamsLink<T extends typeof DLO | typeof BSO> extends LoadParams { 
+	type: T
 	reverse: boolean
 }
 
-export interface LoadParamsExpand extends LoadParams { 
-	type: typeof DLO & DLOFunctionHacks
+export interface LoadParamsExpand<T extends typeof DLO | typeof BSO> extends LoadParams { 
+	type: T
 	noBulk: boolean
 }
 
