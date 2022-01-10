@@ -101,7 +101,7 @@ export class DLO extends DataObject {
 		const query = this.select(select, filters);
 		if(db === false) return query;
 		const result = await query.execute(db);
-		return result.rows.map((row:object) => new this(false, row));
+		return result.rows.map((row:object) => new this().$ingest(row));
 	}
 
 	/** Get a SelectBuilder for a set of columns and filters */
@@ -125,29 +125,29 @@ export class DLO extends DataObject {
 		}
 	}
 
-	/** Build a DLO from either a database row or a given object */
-	constructor(obj:object|false = false, row:object = {}){
+	/** Build a DLO from a given object */
+	constructor(obj?:object){
 		super();
-		if(obj !== false){ // TODO: get rid of this fucking hack
+		if(obj){
 			Object.assign(this, obj);
-		}else{
-			this.#inheritRow(row);
-			DLO.#booleans(this);
 		}
 	}
 
 	/** 
+	 * Build a DLO from a database row.
 	 * Scans this row for fields that belong to the same table as this object.
 	 * Any matching fields are injected into the object.
 	 * This is done by expecting fields to be prefixed with the table's 2-letter code.
 	 */
-	#inheritRow(row:object) : void {
+	$ingest(row:object){
 		const prefix = this.$('prefix') + '_';
 		for(const [k, v] of Object.entries(row)){
 			if(k.startsWith(prefix)){
 				(this as any)[k.substring(3)] = v;
 			}
 		}
+		DLO.#booleans(this);
+		return this;
 	}
 
 	/** Generate a UUID for this DLO. Will fail if the field is already filled. */

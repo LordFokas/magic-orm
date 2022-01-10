@@ -158,11 +158,11 @@ export class BSO extends DataObject {
 
 		// recursively construct self and links
 		const bsos:BSO[] = await Promise.all(results.rows.map(async (row:object) => {
-			const bso = new this.dlo(false, row).bso();
+			const bso = new this.dlo().$ingest(row).bso();
 			for(const link of links){
 				if(link.type.prototype instanceof BSO){
 					const bsoChildType = (link.type as any as typeof BSO);
-					const bsoChild = new bsoChildType.dlo(false, row).bso();
+					const bsoChild = new bsoChildType.dlo().$ingest(row).bso();
 					chains.filter((c:Chain) => c.parent == bsoChildType.dlo).map(c => {
 						BSO.recursiveLink(bsoChild, row, c.child, chains);
 					});
@@ -170,7 +170,7 @@ export class BSO extends DataObject {
 					await bsoChild.finishInflation(db, ...link.params);
 					bso.useLink(bsoChild);
 				}else if(link.type.prototype instanceof DLO){
-					bso.useLink(new link.type(false, row));
+					bso.useLink(new link.type().$ingest(row));
 				}else{
 					throw new Error('Unsupported linkage type');
 				}
@@ -210,13 +210,13 @@ export class BSO extends DataObject {
 	/** ??? */
 	static recursiveLink(bso:BSO, row:object, type:typeof DLO, chains?:Chain[]) : void {
 		if(type.prototype instanceof BSO){
-			const bsoChild = new (type as any as typeof BSO).dlo(false, row).bso();
+			const bsoChild = new (type as any as typeof BSO).dlo().$ingest(row).bso();
 			chains.filter(c => c.parent == type).map(c => {
 				BSO.recursiveLink(bsoChild, row, c.child);
 			});
 			bso.useLink(bsoChild);
 		}else if(type.prototype instanceof DLO){
-			bso.useLink(new type(false, row));
+			bso.useLink(new type().$ingest(row));
 		}else{
 			throw new Error('Unsupported linkage type');
 		}
@@ -309,12 +309,12 @@ export interface LoadParams {
 
 export interface LoadParamsLink<T extends typeof DLO | typeof BSO> extends LoadParams {
 	type: T
-	reverse: boolean
+	reverse?: boolean
 }
 
 export interface LoadParamsExpand<T extends typeof DLO | typeof BSO> extends LoadParams {
 	type: T
-	noBulk: boolean
+	noBulk?: boolean
 }
 
 
