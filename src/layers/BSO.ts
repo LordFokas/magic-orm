@@ -34,7 +34,7 @@ export class BSO extends DataObject {
 	}
 
 	/** Create link-expansion relationships between entities. Works with DLOs. */
-	static link(childDLO:typeof DLO, parentDLO:typeof DLO){
+	static link(childDLO:typeof DLO, parentDLO?:typeof DLO){
 		if(!parentDLO) return {
 			to: (...ps:(typeof DLO)[]):any => ps.map(p => BSO.link(childDLO, p))
 		};
