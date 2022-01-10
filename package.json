@@ -1,0 +1,31 @@
+{
+  "name": "lasagna-orm",
+  "version": "1.0.2",
+  "description": "A simple layered ORM in TypeScript. Unorthodox, but made to fit my specific use cases.",
+  "main": "dist/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "lasagna",
+    "nodejs",
+    "typescript",
+    "orm",
+    "postgres",
+    "postgresql",
+    "pg"
+  ],
+  "author": "LordFokas",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^17.0.8",
+    "@types/pg": "^8.6.3",
+    "@types/pg-pool": "^2.0.3",
+    "@types/uuid": "^8.3.4"
+  },
+  "dependencies": {
+    "loggamus": "^1.4.3",
+    "pg": "^8.7.1",
+    "uuid": "^8.3.2"
+  }
+}
