@@ -26,23 +26,27 @@ export class DLO extends DataObject {
 		(this as any)['$bso'] = bso;
 	}
 	
-	/** Get all the entities from this table */
-	static async all<T>(this: typeof DLO & (new (...a:any) => T), db:Connection, select:string='*') // @ts-ignore
-	:ArrayPromise<T> {
-		return await this.read(db, select) as T[];
-	}
-
 	/** Get one entity from this table, by UUID. */
-	static async uuid<T>(this: typeof DLO & (new (...a:any) => T), db:Connection, uuid:string, select='*') // @ts-ignore
-	:ArrayPromise<T> {
+	static async uuid <K extends $$NS, T extends NamespacedUUID<K>>
+	(this: typeof DLO & Class<T>, db:Connection, uuid:UUID<K>, select='*') // @ts-ignore
+	/********************************************************************/ :ArrayPromise<T>
+	{
 		return await this.read(db, select, [
 			{col: 'uuid', var: uuid}
 		]) as T[];
 	}
 
+	/** Get all the entities from this table */
+	static async all<T>(this: typeof DLO & Class<T>, db:Connection, select:string='*') // @ts-ignore
+	/********************************************************************************/ :ArrayPromise<T>
+	{
+		return await this.read(db, select) as T[];
+	}
+
 	/** Get all entities from this table where {field} is in {list}. */
-	static async in<T>(this: typeof DLO & (new (...a:any) => T), db:Connection, field:string, list:string[], select='*') // @ts-ignore
-	:ArrayPromise<T> {
+	static async in<T>(this: typeof DLO & Class<T>, db:Connection, field:string, list:string[], select='*') // @ts-ignore
+	/*****************************************************************************************************/ :ArrayPromise<T>
+	{
 		return await this.read(db, select, [
 			{col: field, in: list}
 		]) as T[];
@@ -256,8 +260,11 @@ export class DLO extends DataObject {
 
 export type SkipUUID = "skip_uuid_gen"|false;
 
+export interface Class<T> { new (...$:any) : T }
+
 export type $$C = 'A'|'B'|'C'|'D'|'E'|'F'|'G'|'H'|'I'|'J'|'K'|'L'|'M'|'N'|'O'|'P'|'Q'|'R'|'S'|'T'|'U'|'V'|'W'|'X'|'Y'|'Z';
 export type $$NS = `${$$C}${$$C}`;
 export type UUID<T extends $$NS> = `${T}::${string}`;
+export interface NamespacedUUID<K extends $$NS> { uuid: UUID<K> }
 
 LayeredObject.DLO = DLO;

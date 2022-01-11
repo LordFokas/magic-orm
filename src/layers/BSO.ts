@@ -248,13 +248,13 @@ export class BSO extends DataObject {
 
 	// ########################################################################
 	// INSTANCE
-	constructor(dlo:DLO){
+	constructor(dlo:object){
 		super();
 		this.inherit(dlo);
 	}
 
 	/** Inherit the data from a base DLO */
-	inherit(dlo:DLO) : void {
+	inherit(dlo:object) : void {
 		Object.assign(this, dlo);
 	}
 
