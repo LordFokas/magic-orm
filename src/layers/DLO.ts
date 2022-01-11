@@ -206,7 +206,7 @@ export class DLO extends DataObject {
 	}
 
 	dlo() : this { return this; }
-	bso() : BSO  { return new (this.$('bso'))(this); }
+	bso() : BSO  { return new (this.$('$bso'))(this); }
 
 	/**
 	 * Creates a list of fields for a SELECT query, aliased as XX_col_name

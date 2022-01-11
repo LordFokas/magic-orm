@@ -1,5 +1,5 @@
 import { LayeredObject, DataObject, type ArrayPromise } from '../LayeredObject';
-import { DLO, type SkipUUID } from './DLO';
+import { DLO, type Class, type SkipUUID, type $$NS, type NamespacedUUID, type UUID } from './DLO';
 import { type Connection } from '../DB';
 import { SelectBuilder, type Chain } from '../QueryBuilder';
 
@@ -130,21 +130,22 @@ export class BSO extends DataObject {
 	// READ
 
 	/** Load all BSOs from one table and inflate them */
-	static async all<T>(this: typeof BSO & (new (...a:any) => T), db:Connection, inflate:string = 'all') // @ts-ignore
-	:ArrayPromise<T> {
+	static async all<T>(this: typeof BSO & Class<T>, db:Connection, inflate:string = 'all') // @ts-ignore
+	/*************************************************************************************/ :ArrayPromise<T> {
 		return await this.inflate(db, inflate) as T[];
 	}
 
 	/** Load one BSO by UUID and inflate it */
-	static async uuid<T>(this: typeof BSO & (new (...a:any) => T), db:Connection, uuid:string, inflate:string = 'uuid') // @ts-ignore
-	:ArrayPromise<T> {
+	static async uuid<K extends $$NS, T extends NamespacedUUID<K>>
+	(this: typeof BSO & Class<T>, db:Connection, uuid:UUID<K>, inflate:string = 'uuid') // @ts-ignore
+	/*********************************************************************************/ :ArrayPromise<T> {
 		return await this.inflate(db, inflate, uuid) as T[];
 	}
 
 	/** Query and inflate BSOs. This entails recursion and complexity */
 	static async inflate(db:false, inflate:string, ...params:(boolean|string|number)[]) : Promise<SelectBuilder>; // @ts-ignore
-	static async inflate<T>(this: typeof BSO & (new (...a:any) => T), db:Connection, inflate:string, ...params:(boolean|string|number)[]) : ArrayPromise<T>;
-	static async inflate<T>(this: typeof BSO & (new (...a:any) => T), db:Connection|false, inflate:string, ...params:(boolean|string|number)[]) : Promise<T[] | SelectBuilder> {
+	static async inflate<T>(this: typeof BSO & Class<T>, db:Connection, inflate:string, ...params:(boolean|string|number)[]) : ArrayPromise<T>;
+	static async inflate<T>(this: typeof BSO & Class<T>, db:Connection|false, inflate:string, ...params:(boolean|string|number)[]) : Promise<T[] | SelectBuilder> {
 		const dloClass = this.dlo as typeof DLO & DLOFunctionHacks;
 		const { self, links, expands } = (this.inflates as InflationMapGeneric<typeof DLO & DLOFunctionHacks>)[inflate];
 
@@ -227,7 +228,7 @@ export class BSO extends DataObject {
 	/** ??? */
 	async finishInflation(db:Connection, inflate:string, ...params:any[]) : Promise<void> {
 		const { self, links, expands } = (this.$('inflates') as InflationMapGeneric<typeof DLO & DLOFunctionHacks>)[inflate];
-		const linkname = this.$('dlo').linkname;
+		const linkname = this.$('$dlo').linkname;
 		for(const expand of expands){
 			const type = expand.type;
 			const dlos = await type[expand.exec](db, ...expand.params, [
@@ -258,6 +259,18 @@ export class BSO extends DataObject {
 		Object.assign(this, dlo);
 	}
 
+	/** Generate a UUID for this DLO. Will fail if the field is already filled. */
+	generateUUID() : void {
+		if(this.uuid) throw new Error('Insert failed: Model already contains a UUID');
+		this.uuid = (this.$('$dlo') as typeof DLO).UUID();
+	}
+
+	/** Generate a zero UUID for this DLO. Will fail if the field is already filled. */
+	generateZERO() : void {
+		if(this.uuid) throw new Error('Insert failed: Model already contains a UUID');
+		this.uuid = (this.$('$dlo') as typeof DLO).ZERO();
+	}
+
 	/** Inserts itself into the database */
 	async insert(db:Connection, skip:SkipUUID = false) : Promise<void> {
 		const bso = this.constructor as typeof BSO;
@@ -270,7 +283,7 @@ export class BSO extends DataObject {
 			if(Array.isArray(v) || v instanceof LayeredObject) continue;
 			dlo[k] = v;
 		}
-		return new (this.$('dlo'))(dlo);
+		return new (this.$('$dlo'))(dlo);
 	}
 
 	bso() : this {
@@ -279,13 +292,13 @@ export class BSO extends DataObject {
 
 	/** Use this entity as a link (instance of parent entity) */
 	useLink(dlo:DLO|BSO) : void{
-		const field = (dlo instanceof DLO) ? dlo.$('linkname') : dlo.$('dlo').linkname;
+		const field = (dlo instanceof DLO) ? dlo.$('linkname') : dlo.$('$dlo').linkname;
 		(this as any)[field] = dlo;
 	}
 
 	/** Use this entity as an expand (instance of child entity) */
 	useExpand(dlo:DLO|BSO) : void {
-		const field = (dlo instanceof DLO) ? dlo.$('expandname') : dlo.$('dlo').expandname;
+		const field = (dlo instanceof DLO) ? dlo.$('expandname') : dlo.$('$dlo').expandname;
 		if((this as any)[field]) ((this as any)[field] as (DLO|BSO)[]).push(dlo);
 		else (this as any)[field] = [dlo];
 	}
