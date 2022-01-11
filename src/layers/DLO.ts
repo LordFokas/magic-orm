@@ -15,8 +15,8 @@ export class DLO extends DataObject {
 	static expandname:string;
 	static linkname:string;
 	static uuidsize:UUIDSize;
-	static prefix:string; // TN = TableName
-	static table:string; // table_name = TableName
+	static prefix:$$NS;
+	static table:string;
 
 	static get bso() : typeof BSO {
 		return (this as any)['$bso'];
@@ -225,7 +225,7 @@ export class DLO extends DataObject {
 	}
 
 	/** Generate a zero-filled UUID with an appropriate size for this table's PK. */
-	static ZERO() : string {
+	static ZERO() : UUID<$$NS> {
 		return this.UUID(UUIDv0);
 	}
 
@@ -233,7 +233,7 @@ export class DLO extends DataObject {
 	 * Generate a UUID with an appropriate size for this table's PK.
 	 * A different generator can be provided, default is UUID v4.
 	 */
-	static UUID(gen:()=>string = UUIDv4) : string {
+	static UUID(gen:()=>string = UUIDv4) : UUID<$$NS> {
 		let octets;
 		switch(this.uuidsize){
 			case 'small':
@@ -255,5 +255,9 @@ export class DLO extends DataObject {
 }
 
 export type SkipUUID = "skip_uuid_gen"|false;
+
+export type $$C = 'A'|'B'|'C'|'D'|'E'|'F'|'G'|'H'|'I'|'J'|'K'|'L'|'M'|'N'|'O'|'P'|'Q'|'R'|'S'|'T'|'U'|'V'|'W'|'X'|'Y'|'Z';
+export type $$NS = `${$$C}${$$C}`;
+export type UUID<T extends $$NS> = `${T}::${string}`;
 
 LayeredObject.DLO = DLO;

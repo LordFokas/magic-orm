@@ -1,5 +1,5 @@
 import { type Connection } from "./DB";
-import { type DLO } from "./layers/DLO";
+import { type DLO, type UUID, type $$NS } from "./layers/DLO";
 import { type BSO } from "./layers/BSO";
 import { type SLO } from "./layers/SLO";
 
@@ -50,7 +50,7 @@ export class LayeredObject {
 }
 
 export abstract class DataObject extends LayeredObject {
-	uuid?: string;
+	uuid?: UUID<$$NS>;
 
 	/**
 	 * Get the value of the named field from this class
