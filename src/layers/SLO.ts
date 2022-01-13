@@ -1,7 +1,6 @@
 import { LayeredObject, DataObject } from '../LayeredObject.js';
 import { type EntityRef, type Domain } from '../Structures.js';
 
-export default SLO;
 export class SLO extends LayeredObject {
 	/** Transforms a JSON structure into concrete entities */
 	static fromJSON<T extends DataObject>(data:string, domain:Domain = 'auto') : T {

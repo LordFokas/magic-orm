@@ -17,7 +17,6 @@ type DLOMap = {[key:string]: DLOReference }
 
 const logger:Logger = Logger.getDefault();
 
-export default BSO;
 export class BSO extends DataObject {
 	static #links:DLOMap = {};
 	static #expands:DLOMap = {};

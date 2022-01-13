@@ -10,7 +10,6 @@ import {
 } from './Structures.js';
 
 /** Base class for the layered entities. */
-export default LayeredObject;
 export class LayeredObject {
 	static #entities:ForwardMap = { DLO: {}, BSO: {}, raw: {} };
 	static #reverse:ReverseMap = { };

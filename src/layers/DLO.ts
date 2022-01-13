@@ -3,7 +3,7 @@ const  UUIDv0 = () => '000000000000-0000-0000-0000-00000000';
 
 import { type Connection } from '../DB.js';
 import { SelectBuilder, UpdateBuilder, type Filter } from '../QueryBuilder.js';
-import { LayeredObject, DataObject } from '../LayeredObject.js';
+import { DataObject } from '../LayeredObject.js';
 
 import { type BSO } from './BSO.js';
 
@@ -14,7 +14,6 @@ import {
 	type ArrayPromise
 } from '../Structures.js';
 
-export default DLO;
 export class DLO extends DataObject {
 	static expandname:string;
 	static linkname:string;
