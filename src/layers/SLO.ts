@@ -81,3 +81,5 @@ export class SLO extends LayeredObject {
 		return data;
 	}
 }
+
+LayeredObject.Serializer = SLO;

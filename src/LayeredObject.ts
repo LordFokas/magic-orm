@@ -1,10 +1,9 @@
 import { type DLO } from './layers/DLO.js';
 import { type BSO } from './layers/BSO.js';
-import {      SLO } from './layers/SLO.js';
 
 import {
 	type ForwardMap, type ReverseMap, type EntityRef,
-	type Domain, type Level,
+	type Domain, type Level, EntitySerializer,
 	type UUID, type NS,
 	type Class
 } from './Structures.js';
@@ -13,6 +12,7 @@ import {
 export class LayeredObject {
 	static #entities:ForwardMap = { DLO: {}, BSO: {}, raw: {} };
 	static #reverse:ReverseMap = { };
+	static Serializer:EntitySerializer;
 
 	/**
 	 * Add a layered Entity to the mappings
@@ -56,14 +56,14 @@ export abstract class DataObject extends LayeredObject {
 
 	/** Transforms a JSON structure into concrete entities */
 	static fromJSON<T extends DataObject>(this:typeof DataObject&Class<T>, data:string, domain:Domain = 'auto') : T {
-		const result = SLO.fromJSON<T>(data, domain);
+		const result = DataObject.Serializer.fromJSON<T>(data, domain);
 		this.#validateOwnType(result);
 		return result;
 	}
 
 	/** Transforms an object into concrete entities */
 	static fromObject<T extends DataObject>(this:typeof DataObject&Class<T>, data:object, domain:Domain = 'auto') : T {
-		const result = SLO.fromObject<T>(data, domain);
+		const result = DataObject.Serializer.fromObject<T>(data, domain);
 		this.#validateOwnType(result);
 		return result;
 	}
@@ -80,12 +80,12 @@ export abstract class DataObject extends LayeredObject {
 	
 	/** Converts into a JSON strings */
 	toJSON(domain:Domain = 'tech', pretty:boolean = false) : string {
-		return SLO.toJSON(this, domain, pretty);
+		return DataObject.Serializer.toJSON(this, domain, pretty);
 	}
 
 	/** Converts into a plain object */
 	toObject(domain:Domain = 'tech') : object {
-		return SLO.toObject(this, domain);
+		return DataObject.Serializer.toObject(this, domain);
 	}
 
 

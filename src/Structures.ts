@@ -46,6 +46,12 @@ export interface EntityRef {
 	'@type': string;
 	'@level'?: Level;
 }
+export interface EntitySerializer {
+	fromJSON<T extends DataObject>(data:string, domain:Domain) : T
+	fromObject<T extends DataObject>(data:object, domain:Domain) : T
+	toJSON(data:DataObject|Array<DataObject>, domain:Domain, pretty:boolean) : string
+	toObject(data:DataObject|Array<DataObject>, domain:Domain) : object
+}
 //#endregion
 
 
