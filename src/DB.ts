@@ -2,25 +2,15 @@ import util from 'node:util';
 
 import Pool from 'pg-pool';
 import { QueryArrayResult, type Client, type PoolClient } from 'pg';
-
-import { Logger, LogLevel, PrettyPrinter, Pipe, type Color } from 'loggamus';
+import { Logger, LogLevel, PrettyPrinter, Pipe, type Color, type Options } from 'loggamus';
 
 
 const DBCONN  = new LogLevel("DBCONN" , 35);
 const DBLOCK  = new LogLevel("DBLOCK" , 28);
 const DBQUERY = new LogLevel("DBQUERY", 22);
 
-const logger = Logger.getDefault().child('DB', {
-	mintrace: LogLevel.ERROR,
-	tracedepth: 5,
-	styles: {
-		'DBCONN'  : { color: 'yellow', mods: ['underline'] },
-		'DBLOCK'  : { color: 'red'   , mods: ['underline'] },
-		'DBQUERY' : { color: 'white' , mods: ['bright']    }
-	}
-});
-
-var pool:Pool<Client>;
+let $logger:Logger;
+let $pool:Pool<Client>;
 
 // Picks up PrettyPrinter output and pushes it back into the logging pipeline.
 class DBPipe extends Pipe {
@@ -28,7 +18,7 @@ class DBPipe extends Pipe {
 	usesPretty(){ return true; }
 
 	write(pretty:string, raw:string|object, meta:object){
-		logger.log(pretty, DBQUERY);
+		$logger.log(pretty, DBQUERY);
 	}
 }
 
@@ -41,16 +31,29 @@ export class DB {
 
 	/** Initiate the connection pool to the database server. Necessary before acquiring any connections. */
 	static init(config:Pool.Config<Client>) : void {
-		logger.log("Initializing DB Connection Pool!", DBCONN);
-		pool = new Pool(config);
+		$logger.log("Initializing DB Connection Pool!", DBCONN);
+		$pool = new Pool(config);
 	}
 
 	/** Acquire a connection to execute queries on. */
 	static async acquire() : Promise<Connection> {
-		logger.log("Acquiring DB Connection!", DBCONN);
-		const conn:PGClient = await pool.connect();
+		$logger.log("Acquiring DB Connection!", DBCONN);
+		const conn:PGClient = await $pool.connect();
 		return new Connection(conn);
 	};
+
+	/** Define a new logger to send output to */
+	static useLogger(logger:Logger, options?:Options) : void {
+		$logger = logger.child('DB', options || {
+			mintrace: LogLevel.ERROR,
+			tracedepth: 5,
+			styles: {
+				'DBCONN'  : { color: 'yellow', mods: ['underline'] },
+				'DBLOCK'  : { color: 'red'   , mods: ['underline'] },
+				'DBQUERY' : { color: 'white' , mods: ['bright']    }
+			}
+		})
+	}
 }
 
 /** A database connection to execute queries on. */
@@ -89,18 +92,18 @@ export class Connection{
 	async DANGEROUSLY(sql:string) : Promise<QueryArrayResult> {
 		if(sql.startsWith("LOCK")) this.#under_lock = true;
 		else if(sql.startsWith("UNLOCK")) this.#under_lock = false;
-		logger.log(sql, DBLOCK);
+		$logger.log(sql, DBLOCK);
 		return await this.#conn.query(sql);
 	}
 
 	/** Release this connection back into the Pool. */
 	release() : void {
 		if(this.#conn){
-			logger.log("Releasing DB Connection!", DBCONN);
+			$logger.log("Releasing DB Connection!", DBCONN);
 			this.#conn.release();
 			this.#conn = null;
 		}else{
-			logger.log("Ignoring release of DB Connection!", DBCONN);
+			$logger.log("Ignoring release of DB Connection!", DBCONN);
 		}
 	}
 }
@@ -144,7 +147,7 @@ class DBUtil {
 		const plen = (sql.match(regex) || []).length;
 		const glen = params.length;
 		if(glen !== plen){ // Enforce same number of placeholders and parameters.
-			logger.warn(sql);
+			$logger.warn(sql);
 			throw new Error(
 				`Invalid Parameterization: Expected ${plen}, given ${glen} => `
 				+ util.inspect(params)
@@ -170,3 +173,5 @@ class DBUtil {
 		pretty.flush(0);
 	}
 }
+
+DB.useLogger(Logger.getDefault());

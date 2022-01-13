@@ -1,7 +1,14 @@
-import { LayeredObject, DataObject, type ArrayPromise } from '../LayeredObject';
-import { DLO, type Class, type SkipUUID, type $$NS, type NamespacedUUID, type UUID } from './DLO';
 import { type Connection } from '../DB';
 import { SelectBuilder, type Chain } from '../QueryBuilder';
+import { LayeredObject, DataObject } from '../LayeredObject';
+import { DLO } from './DLO';
+
+import {
+	type InflationMap, type InflationMapGeneric,
+	type UUID, type NS,
+	type Class, type NamespacedUUID,
+	type SkipUUID, type ArrayPromise
+} from '../Structures';
 
 import { Logger } from 'loggamus';
 
@@ -136,7 +143,7 @@ export class BSO extends DataObject {
 	}
 
 	/** Load one BSO by UUID and inflate it */
-	static async uuid<K extends $$NS, T extends NamespacedUUID<K>>
+	static async uuid<K extends NS, T extends NamespacedUUID<K>>
 	(this: typeof BSO & Class<T>, db:Connection, uuid:UUID<K>, inflate:string = 'uuid') // @ts-ignore
 	/*********************************************************************************/ :ArrayPromise<T> {
 		return await this.inflate(db, inflate, uuid) as T[];
@@ -304,33 +311,8 @@ export class BSO extends DataObject {
 	}
 }
 
+//#region Hacks
 interface DLOFunctionHacks { [key:string]: ScaffoldingFunction&LoadingFunction; }
 type ScaffoldingFunction = (c:false, ...$:any[]) => Promise<SelectBuilder>;
 type LoadingFunction = (c:Connection, ...$:any[]) => Promise<DLO[]>;
-
-export type InflationMap = InflationMapGeneric<typeof DLO | typeof BSO>;
-export interface InflationMapGeneric<T extends typeof DLO | typeof BSO>{
-	[key:string]: {
-		self: LoadParams
-		links: LoadParamsLink<T>[]
-		expands: LoadParamsExpand<T>[]
-	}
-}
-
-export interface LoadParams { 
-	exec: string
-	params: string[]
-}
-
-export interface LoadParamsLink<T extends typeof DLO | typeof BSO> extends LoadParams {
-	type: T
-	reverse?: boolean
-}
-
-export interface LoadParamsExpand<T extends typeof DLO | typeof BSO> extends LoadParams {
-	type: T
-	noBulk?: boolean
-}
-
-
-LayeredObject.BSO = BSO;
+//#endregion

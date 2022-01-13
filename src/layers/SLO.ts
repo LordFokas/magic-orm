@@ -1,57 +1,41 @@
-import { LayeredObject, DataObject, type EntityRef, type Domain } from '../LayeredObject';
+import { LayeredObject, DataObject } from '../LayeredObject';
+import { type EntityRef, type Domain, type Class } from '../Structures';
 
 export default SLO;
 export class SLO extends LayeredObject {
-	/**
-	 * Transforms a JSON structure into concrete MLM entities
-	 * @param data JSON structure with entity data
-	 * @param domain the conversion domain
-	 * @returns MLM entity (DLOUser, BSOAccount, ...)
-	 */
-	static fromJSON(data:string, domain:Domain = 'auto') : LayeredObject {
+	/** Transforms a JSON structure into concrete entities */
+	static fromJSON<T extends DataObject>(data:string, domain:Domain = 'auto') : T {
 		if(typeof data !== 'string')
 			throw new Error('Expected data type to be string');
-		return JSON.parse(data, (k, obj) => SLO.reviver(obj, domain));
+		return JSON.parse(data, (k, obj) => SLO.#reviver(obj, domain));
 	}
 
-	/**
-	 * Transforms an object into concrete MLM entities
-	 * @param data object with entity data
-	 * @param domain the conversion domain
-	 * @returns MLM entity (DLOUser, BSOAccount, ...)
-	 */
-	static fromObject(data:object, domain:Domain = 'auto') : LayeredObject {
-		return SLO.visitor(data, (obj:any) => SLO.reviver(obj, domain));
+	/** Transforms an object into concrete entities */
+	static fromObject<T extends DataObject>(data:object, domain:Domain = 'auto') : T {
+		return SLO.#visitor(data, (obj:any) => SLO.#reviver(obj, domain));
 	}
 
-	/**
-	 * Converts MLM entities into JSON strings.
-	 * @param data MLM entity (or Array of them)
-	 * @param domain the conversion domain
-	 * @param pretty wether or not to consider whitespaces in output.
-	 * @returns JSON string representing the data of the MLM entity(ies)
-	 */
+	/** Converts entities into JSON strings. */
 	static toJSON(data:DataObject|Array<DataObject>, domain:Domain = 'tech', pretty:boolean = false) : string {
-		return JSON.stringify(data, (k, val) => {
-			if(val instanceof DataObject){
-				const obj:DataObject = val;
+		return JSON.stringify(SLO.toObject(data, domain), null, pretty ? 4 : 0);
+	}
+
+	/** Converts entities into raw objects */
+	static toObject(data:DataObject|Array<DataObject>, domain:Domain = 'tech') : object {
+		return SLO.#visitor(data, (obj:any) => {
+			if(obj instanceof DataObject){
 				const ret = {};
 				Object.assign(ret, DataObject.$meta(obj, domain))
-				Object.assign(ret, val);
+				Object.assign(ret, obj);
 				return ret;
 			}else{
-				return val;
+				return obj;
 			}
-		}, pretty ? 4 : 0);
+		});
 	}
 
-	/**
-	 * Deserialization function
-	 * @param val the value to deserialize
-	 * @param domain the conversion domain
-	 * @returns constructed MLM entities (for object inputs) or the raw input (if primitives or arrays)
-	 */
-	static reviver(val:any, domain:Domain) : any {
+	/** Deserialization function */
+	static #reviver(val:any, domain:Domain) : any {
 		if(val instanceof Object && val['@type']){
 			const obj:object&EntityRef = val;
 			let ctor:typeof DataObject;
@@ -79,13 +63,8 @@ export class SLO extends LayeredObject {
 		}
 	}
 
-	/**
-	 * Applies a function to every node of the given data
-	 * @param data the data to transform
-	 * @param fn the function to apply to the nodes
-	 * @returns a clone with the transformed data
-	 */
-	static visitor(data:any, fn:(val:any) => any) : any {
+	/** Applies a function to every node of the given data */
+	static #visitor(data:any, fn:(val:any) => any) : any {
 		if(data instanceof Object){
 			const obj:{[k:string]:any} = {}
 			for(const key in data){
@@ -103,9 +82,3 @@ export class SLO extends LayeredObject {
 		return data;
 	}
 }
-
-interface Entity {
-	new (data:object) : LayeredObject;
-}
-
-LayeredObject.SLO = SLO;

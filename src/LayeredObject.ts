@@ -1,16 +1,19 @@
-import { type Connection } from "./DB";
-import { type DLO, type UUID, type $$NS } from "./layers/DLO";
+import { type DLO } from "./layers/DLO";
 import { type BSO } from "./layers/BSO";
-import { type SLO } from "./layers/SLO";
+import {      SLO } from "./layers/SLO";
+
+import {
+	type ForwardMap, type ReverseMap, type EntityRef,
+	type Domain, type Level,
+	type UUID, type NS,
+	type Class
+} from './Structures';
 
 /** Base class for the layered entities. */
 export default LayeredObject;
 export class LayeredObject {
 	static #entities:ForwardMap = { DLO: {}, BSO: {}, raw: {} };
 	static #reverse:ReverseMap = { };
-	static DLO:typeof DLO;
-	static BSO:typeof BSO;
-	static SLO:typeof SLO;
 
 	/**
 	 * Add a layered Entity to the mappings
@@ -50,21 +53,49 @@ export class LayeredObject {
 }
 
 export abstract class DataObject extends LayeredObject {
-	uuid?: UUID<$$NS>;
+	uuid?: UUID<NS>;
 
-	/**
-	 * Get the value of the named field from this class
-	 * @param field name of the field to read
-	 * @returns the field's value
-	 */
+	/** Transforms a JSON structure into concrete entities */
+	static fromJSON<T extends DataObject>(this:typeof DataObject&Class<T>, data:string, domain:Domain = 'auto') : T {
+		const result = SLO.fromJSON<T>(data, domain);
+		this.#validateOwnType(result);
+		return result;
+	}
+
+	/** Transforms an object into concrete entities */
+	static fromObject<T extends DataObject>(this:typeof DataObject&Class<T>, data:object, domain:Domain = 'auto') : T {
+		const result = SLO.fromObject<T>(data, domain);
+		this.#validateOwnType(result);
+		return result;
+	}
+
+	/** Validate that a type has a correct structure */
+	static #validateOwnType<T extends DataObject>(this:typeof DataObject&Class<T>, obj:T) : void {
+		if(!(obj instanceof DataObject)){
+			throw new Error("Input payload is not a recognized model");
+		}
+		if(obj.constructor !== this){
+			throw new Error(`Type mismatch: expected ${this.name} but got ${obj.constructor.name}`);
+		}
+	}
+	
+	/** Converts into a JSON strings */
+	toJSON(domain:Domain = 'tech', pretty:boolean = false) : string {
+		return SLO.toJSON(this, domain, pretty);
+	}
+
+	/** Converts into a plain object */
+	toObject(domain:Domain = 'tech') : object {
+		return SLO.toObject(this, domain);
+	}
+
+
+
+	/** Get the value of the named field from this class */
 	// @ts-ignore
 	static $(field:string) : any { return this[field]; }
 
-	/**
-	 * Get the value of the named field from this object's class
-	 * @param field name of the field to read
-	 * @returns the field's value
-	 */
+	/** Get the value of the named field from this object's class */
 	// @ts-ignore
 	$(field:string) : any { return this.constructor[field]; }
 
@@ -76,96 +107,6 @@ export abstract class DataObject extends LayeredObject {
 
 	/** Dummy constructor to shut up the type checker */
 	constructor(...$:any[]){ super(); }
+
+	
 }
-
-export type Level = "DLO"|"BSO"|"raw";
-interface ForwardMap {
-	DLO: DataObjectIndex;
-	BSO: DataObjectIndex;
-	raw: DataObjectIndex;
-}
-
-interface DataObjectIndex {
-	[key:string]: typeof DataObject;
-}
-
-interface ReverseMap {
-	[key:string] : EntityDef;
-}
-
-export type Domain = "full"|"base"|"tech"|"auto";
-interface EntityDef {
-	full: EntityRef;
-	base: EntityRef;
-	tech: EntityRef;
-	auto?: never;
-}
-
-export interface EntityRef {
-	'@type': string;
-	'@level'?: Level;
-}
-
-
-
-// ################################################################################################
-// Here be hax0rz
-
-declare global {
-	interface Array<T> {
-		/** Have the lasagna engine make a bulk insert for all elements of this array */
-		insertAll: (db:Connection) => Promise<any>;
-		/** Draw a random element from the array */
-		random: () => T;
-	}
-}
-
-Array.prototype.insertAll = async function insertAll(db:Connection) : Promise<any> {
-	if(this.length == 0) throw new Error('Attempted to bulk insert empty array');
-	const first = this[0];
-	if(first instanceof DataObject){
-		if(first instanceof DataObject.DLO){
-			return await DataObject.DLO.bulkInsert(db, this as DLO[]);
-		}
-		if(first instanceof DataObject.BSO){
-			return await DataObject.BSO.bulkInsert(db, this as BSO[]);
-		}
-		throw new Error('What the actual fuck are you even doing?');
-	}else{
-		throw new Error('Attempted to bulk insert non-MLM array');
-	}
-}
-
-Array.prototype.random = function random() : any {
-	return this[Math.floor(Math.random() * this.length)];
-}
-
-
-
-export class ArrayPromise<T> extends Promise<T[]>{
-	async first(fallback?:T) : Promise<T> { return null; }
-}
-// @ts-ignore
-Promise.prototype.first = async function first(fallback : any) : Promise<any> {
-	const array:any[] = await this;
-	return (array.length > 0) ? array[0] : fallback;
-}
-
-
-declare global {
-	interface Object {
-		/** Check if an object is flat or a composite */
-		isHigherOrder: () => boolean;
-	}
-}
-
-Object.defineProperty(Object.prototype, 'isHigherOrder', {
-	'enumerable': false,
-	'value': function isHigherOrder(){
-		for(const value of Object.values(this)){
-			if(value instanceof Object) return true;
-			if(Array.isArray(value)) return true;
-		}
-		return false;
-	}
-});

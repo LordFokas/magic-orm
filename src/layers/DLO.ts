@@ -1,21 +1,25 @@
 import { v4 as UUIDv4 } from 'uuid';
 const  UUIDv0 = () => '000000000000-0000-0000-0000-00000000';
 
-import { LayeredObject, DataObject, type ArrayPromise } from '../LayeredObject';
-import { type BSO } from './BSO';
-
 import { type Connection } from '../DB';
 import { SelectBuilder, UpdateBuilder, type Filter } from '../QueryBuilder';
+import { LayeredObject, DataObject } from '../LayeredObject';
 
-/** small (12+4), standard (32+8), long(48+10), huge (64+13) */
-export type UUIDSize = "small"|"standard"|"long"|"huge";
+import { type BSO } from './BSO';
+
+import {
+	type UUID, type NS,
+	type Class, type NamespacedUUID,
+	type UUIDSize, type SkipUUID,
+	type ArrayPromise
+} from '../Structures';
 
 export default DLO;
 export class DLO extends DataObject {
 	static expandname:string;
 	static linkname:string;
 	static uuidsize:UUIDSize;
-	static prefix:$$NS;
+	static prefix:NS;
 	static table:string;
 
 	static get bso() : typeof BSO {
@@ -27,7 +31,7 @@ export class DLO extends DataObject {
 	}
 	
 	/** Get one entity from this table, by UUID. */
-	static async uuid <K extends $$NS, T extends NamespacedUUID<K>>
+	static async uuid <K extends NS, T extends NamespacedUUID<K>>
 	(this: typeof DLO & Class<T>, db:Connection, uuid:UUID<K>, select='*') // @ts-ignore
 	/********************************************************************/ :ArrayPromise<T>
 	{
@@ -229,7 +233,7 @@ export class DLO extends DataObject {
 	}
 
 	/** Generate a zero-filled UUID with an appropriate size for this table's PK. */
-	static ZERO() : UUID<$$NS> {
+	static ZERO() : UUID<NS> {
 		return this.UUID(UUIDv0);
 	}
 
@@ -237,7 +241,7 @@ export class DLO extends DataObject {
 	 * Generate a UUID with an appropriate size for this table's PK.
 	 * A different generator can be provided, default is UUID v4.
 	 */
-	static UUID(gen:()=>string = UUIDv4) : UUID<$$NS> {
+	static UUID(gen:()=>string = UUIDv4) : UUID<NS> {
 		let octets;
 		switch(this.uuidsize){
 			case 'small':
@@ -257,14 +261,3 @@ export class DLO extends DataObject {
 		return `${this.prefix}::${octets}`;
 	}
 }
-
-export type SkipUUID = "skip_uuid_gen"|false;
-
-export interface Class<T> { new (...$:any) : T }
-
-export type $$C = 'A'|'B'|'C'|'D'|'E'|'F'|'G'|'H'|'I'|'J'|'K'|'L'|'M'|'N'|'O'|'P'|'Q'|'R'|'S'|'T'|'U'|'V'|'W'|'X'|'Y'|'Z';
-export type $$NS = `${$$C}${$$C}`;
-export type UUID<T extends $$NS> = `${T}::${string}`;
-export interface NamespacedUUID<K extends $$NS> { uuid: UUID<K> }
-
-LayeredObject.DLO = DLO;
