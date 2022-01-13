@@ -1,14 +1,14 @@
-import { type Connection } from '../DB';
-import { SelectBuilder, type Chain } from '../QueryBuilder';
-import { LayeredObject, DataObject } from '../LayeredObject';
-import { DLO } from './DLO';
+import { type Connection } from '../DB.js';
+import { SelectBuilder, type Chain } from '../QueryBuilder.js';
+import { LayeredObject, DataObject } from '../LayeredObject.js';
+import { DLO } from './DLO.js';
 
 import {
 	type InflationMap, type InflationMapGeneric,
 	type UUID, type NS,
 	type Class, type NamespacedUUID,
 	type SkipUUID, type ArrayPromise
-} from '../Structures';
+} from '../Structures.js';
 
 import { Logger } from 'loggamus';
 

@@ -1,5 +1,5 @@
-import { LayeredObject, DataObject } from '../LayeredObject';
-import { type EntityRef, type Domain, type Class } from '../Structures';
+import { LayeredObject, DataObject } from '../LayeredObject.js';
+import { type EntityRef, type Domain } from '../Structures.js';
 
 export default SLO;
 export class SLO extends LayeredObject {

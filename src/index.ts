@@ -4,13 +4,13 @@ export {
     type Domain, type Level,
     type InflationMap,
     type ArrayPromise
-} from './Structures';
+} from './Structures.js';
 
 
-export { DB, type Connection } from './DB';
+export { DB, type Connection } from './DB.js';
 
-export { LayeredObject, DataObject } from './LayeredObject';
+export { LayeredObject, DataObject } from './LayeredObject.js';
 
-export { DLO } from './layers/DLO';
-export { BSO } from './layers/BSO';
-export { SLO } from './layers/SLO';
+export { DLO } from './layers/DLO.js';
+export { BSO } from './layers/BSO.js';
+export { SLO } from './layers/SLO.js';

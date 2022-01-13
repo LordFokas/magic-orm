@@ -1,5 +1,5 @@
-import { type DLO } from './layers/DLO';
-import { type Connection } from './DB';
+import { type DLO } from './layers/DLO.js';
+import { type Connection } from './DB.js';
 
 export class QueryBuilder {
 	#conds:string[] = [];

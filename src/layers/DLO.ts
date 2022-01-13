@@ -1,18 +1,18 @@
 import { v4 as UUIDv4 } from 'uuid';
 const  UUIDv0 = () => '000000000000-0000-0000-0000-00000000';
 
-import { type Connection } from '../DB';
-import { SelectBuilder, UpdateBuilder, type Filter } from '../QueryBuilder';
-import { LayeredObject, DataObject } from '../LayeredObject';
+import { type Connection } from '../DB.js';
+import { SelectBuilder, UpdateBuilder, type Filter } from '../QueryBuilder.js';
+import { LayeredObject, DataObject } from '../LayeredObject.js';
 
-import { type BSO } from './BSO';
+import { type BSO } from './BSO.js';
 
 import {
 	type UUID, type NS,
 	type Class, type NamespacedUUID,
 	type UUIDSize, type SkipUUID,
 	type ArrayPromise
-} from '../Structures';
+} from '../Structures.js';
 
 export default DLO;
 export class DLO extends DataObject {

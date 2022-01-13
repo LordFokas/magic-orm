@@ -1,13 +1,13 @@
-import { type DLO } from "./layers/DLO";
-import { type BSO } from "./layers/BSO";
-import {      SLO } from "./layers/SLO";
+import { type DLO } from './layers/DLO.js';
+import { type BSO } from './layers/BSO.js';
+import {      SLO } from './layers/SLO.js';
 
 import {
 	type ForwardMap, type ReverseMap, type EntityRef,
 	type Domain, type Level,
 	type UUID, type NS,
 	type Class
-} from './Structures';
+} from './Structures.js';
 
 /** Base class for the layered entities. */
 export default LayeredObject;

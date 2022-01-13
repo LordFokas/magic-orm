@@ -1,10 +1,10 @@
-import { type DataObject } from './LayeredObject';
-import { type DLO } from "./layers/DLO";
-import { type BSO } from "./layers/BSO";
+import { type DataObject } from './LayeredObject.js';
+import { type DLO } from './layers/DLO.js';
+import { type BSO } from './layers/BSO.js';
 
 
 
-export { type ArrayPromise } from './Hacks';
+export { type ArrayPromise } from './Hacks.js';
 export interface Class<T> { new (...$:any) : T }
 
 
