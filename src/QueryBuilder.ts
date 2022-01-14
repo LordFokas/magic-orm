@@ -64,10 +64,10 @@ export class SelectBuilder extends QueryBuilder {
 		this.fields().push(...master.fields());
         const self:typeof DLO = this.dlo();
         const other:typeof DLO = this.dlo();
-		const slavefield = (reverse ? self.linkname : other.linkname);
-		const masterlink = (reverse ? other : self).COL(`uuid_${slavefield}`);
+		const slavefield = (reverse ? self : other).linkname;
+		const masterlink = (reverse ? self : other).COL(`uuid_${slavefield}`);
 		const masteruuid = (reverse ? self : other).COL('uuid');
-		this.#joins.push(`JOIN ${this.table()} ON ${masterlink} = ${masteruuid}`);
+		this.#joins.push(`JOIN ${master.table()} ON ${masterlink} = ${masteruuid}`);
 		this.#joins.push(...master.#joins);
 		this.conds().push(...master.conds());
 		this.params().push(...master.params());
