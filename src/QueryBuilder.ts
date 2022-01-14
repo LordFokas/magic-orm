@@ -67,7 +67,7 @@ export class SelectBuilder extends QueryBuilder {
 		const slavefield = (reverse ? self.linkname : other.linkname);
 		const masterlink = (reverse ? other : self).COL(`uuid_${slavefield}`);
 		const masteruuid = (reverse ? self : other).COL('uuid');
-		this.#joins.push(`JOIN ${master.table()} ON ${masterlink} = ${masteruuid}`);
+		this.#joins.push(`JOIN ${this.table()} ON ${masterlink} = ${masteruuid}`);
 		this.#joins.push(...master.#joins);
 		this.conds().push(...master.conds());
 		this.params().push(...master.params());

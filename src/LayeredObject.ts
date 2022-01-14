@@ -52,7 +52,7 @@ export class LayeredObject {
 }
 
 export abstract class DataObject extends LayeredObject {
-	declare uuid?: UUID<NS>;
+	uuid: UUID<NS>;
 
 	/** Transforms a JSON structure into concrete entities */
 	static fromJSON<T extends DataObject>(this:typeof DataObject&Class<T>, data:string, domain:Domain = 'auto') : T {
@@ -91,12 +91,10 @@ export abstract class DataObject extends LayeredObject {
 
 
 	/** Get the value of the named field from this class */
-	// @ts-ignore
-	static $(field:string) : any { return this[field]; }
+	static $(field:string) : any { return (this as Record<string, any>)[field]; }
 
 	/** Get the value of the named field from this object's class */
-	// @ts-ignore
-	$(field:string) : any { return this.constructor[field]; }
+	$(field:string) : any { return (this.constructor as Record<string, any>)[field]; }
 
 	/** Convert this object to a DLO */
 	abstract dlo() : DLO;
@@ -105,7 +103,5 @@ export abstract class DataObject extends LayeredObject {
 	abstract bso() : BSO;
 
 	/** Dummy constructor to shut up the type checker */
-	constructor(...$:any[]){ super(); }
-
-	
+	constructor(...$:any[]){ super(); }	
 }
