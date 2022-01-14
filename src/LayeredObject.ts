@@ -52,7 +52,7 @@ export class LayeredObject {
 }
 
 export abstract class DataObject extends LayeredObject {
-	uuid?: UUID<NS>;
+	declare uuid?: UUID<NS>;
 
 	/** Transforms a JSON structure into concrete entities */
 	static fromJSON<T extends DataObject>(this:typeof DataObject&Class<T>, data:string, domain:Domain = 'auto') : T {
