@@ -1,7 +1,7 @@
 {
   "name": "lasagna-orm",
   "type": "module",
-  "version": "1.5.3",
+  "version": "1.5.4",
   "description": "A simple layered ORM in TypeScript. Unorthodox, but made to fit my specific use cases.",
   "repository": "https://github.com/LordFokas/lasagna-orm",
   "main": "dist/index.js",

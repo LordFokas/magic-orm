@@ -1,9 +1,10 @@
+export { ArrayPromise } from './Hacks.js';
+
 export {
     type Class,
     type UUID, type NamespacedUUID, type UUIDSize, type SkipUUID,
     type Domain, type Level,
-    type InflationMap,
-    type ArrayPromise
+    type InflationMap
 } from './Structures.js';
 
 

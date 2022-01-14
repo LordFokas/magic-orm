@@ -76,7 +76,7 @@ export class Connection{
 		DBUtil.validate(sql, values, this.#under_lock);
 		sql = DBUtil.pgps(sql); // convert ? to $x
 		const start:number = Date.now();
-		const result:QueryArrayResult = await this.#conn.query(sql, DBUtil.patch(values));
+		const result:QueryArrayResult = await this.#query(sql, DBUtil.patch(values));
 		const elapsed:number = Date.now() - start;
 		if(result.rowCount) pretty.write(`>> ${result.rowCount} rows `);
 		else pretty.color('black').write(`>> zero rows `);
@@ -93,7 +93,15 @@ export class Connection{
 		if(sql.startsWith("LOCK")) this.#under_lock = true;
 		else if(sql.startsWith("UNLOCK")) this.#under_lock = false;
 		$logger.log(sql, DBLOCK);
-		return await this.#conn.query(sql);
+		return await this.#query(sql);
+	}
+
+	#query = async function wrap_query(sql:string, values?:any[]){
+		if(this.#conn){
+			return await this.#conn.query(sql, values);
+		}else{
+			throw new Error("Query failed because connection is no longer available");
+		}
 	}
 
 	/** Release this connection back into the Pool. */
