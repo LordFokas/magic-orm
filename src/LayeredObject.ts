@@ -14,10 +14,7 @@ export class LayeredObject {
 	static #reverse:ReverseMap = { };
 	static Serializer:EntitySerializer;
 
-	/**
-	 * Add a layered Entity to the mappings
-	 * @param entity entity class (DLOEntity, BSOEntity, etc)
-	 */
+	/** Add a layered Entity to the mappings */
 	static $put(entity:typeof DataObject){
 		const name:string = entity.name;
 		const level:Level = name.slice(0, 3) as Level;
@@ -31,21 +28,21 @@ export class LayeredObject {
 		}
 	}
 
-	/**
-	 * Get a layered entity class based on the level and entity name. Reverse of {@link $meta}
-	 * @param level the entity level (DLO, BSO, ...)
-	 * @param type the entity name (User, Location, ...)
-	 * @returns a layered entity class (DLOUser, DLOLocation, BSOCategory, ...)
-	 */
-	static $get(level:Level, type:string) : typeof DataObject { return LayeredObject.#entities[level][type]; }
+	/** Get a layered entity class based on the level and entity name. Reverse of {@link $meta} */
+	static $get(level:Level, type:string) : typeof DataObject {
+		const types = LayeredObject.#entities[level];
+		if(!types) throw new Error("Unrecognized Level: "+level);
+		const result = types[type];
+		if(!result) throw new Error(`No type ${type} at level ${level}`);
+		return result;
+	}
 
-	/**
-	 * Get an EntityRef for a given entity and domain. Reverse of {@link $get}
-	 * @param entity MLM Entity instance (ex: instance of DLOUser)
-	 * @param domain the Domain for which to build the EntityRef
-	 * @returns EntityRef {type, level?} for the given input
-	 */
-	static $meta(entity:DataObject, domain:Domain) : EntityRef { return LayeredObject.#reverse[entity.constructor.name][domain]; }
+	/** Get an EntityRef for a given entity and domain. Reverse of {@link $get} */
+	static $meta(entity:DataObject, domain:Domain) : EntityRef {
+		const entry = LayeredObject.#reverse[entity.constructor.name];
+		if(!entry) throw new Error(`No entry for ${entity.constructor.name} in ReverseMap`);
+		return entry[domain];
+	}
 
 	/** Dummy constructor to shut up the type checker */
 	constructor(...$:any[]){}

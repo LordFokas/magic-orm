@@ -52,7 +52,7 @@ export class SLO extends LayeredObject {
 	static toObject(data:DataObject|Array<DataObject>, domain:Domain = 'tech') : object {
 		return SLO.#traverse(data, $ => $, (obj:any) => {
 			if(obj instanceof DataObject){
-				return Object.assign([], DataObject.$meta(obj, domain))
+				return Object.assign({}, DataObject.$meta(obj, domain))
 			}else if(Array.isArray(data)){
 				return [];
 			}else{
