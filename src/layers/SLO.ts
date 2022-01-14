@@ -11,26 +11,7 @@ export class SLO extends LayeredObject {
 
 	/** Transforms an object into concrete entities */
 	static fromObject<T extends DataObject>(data:object, domain:Domain = 'auto') : T {
-		return SLO.#visitor(data, (obj:any) => SLO.#reviver(obj, domain));
-	}
-
-	/** Converts entities into JSON strings. */
-	static toJSON(data:DataObject|Array<DataObject>, domain:Domain = 'tech', pretty:boolean = false) : string {
-		return JSON.stringify(SLO.toObject(data, domain), null, pretty ? 4 : 0);
-	}
-
-	/** Converts entities into raw objects */
-	static toObject(data:DataObject|Array<DataObject>, domain:Domain = 'tech') : object {
-		return SLO.#visitor(data, (obj:any) => {
-			if(obj instanceof DataObject){
-				const ret = {};
-				Object.assign(ret, DataObject.$meta(obj, domain))
-				Object.assign(ret, obj);
-				return ret;
-			}else{
-				return obj;
-			}
-		});
+		return SLO.#traverse(data, (obj:any) => SLO.#reviver(obj, domain));
 	}
 
 	/** Deserialization function */
@@ -62,19 +43,37 @@ export class SLO extends LayeredObject {
 		}
 	}
 
+	/** Converts entities into JSON strings. */
+	static toJSON(data:DataObject|Array<DataObject>, domain:Domain = 'tech', pretty:boolean = false) : string {
+		return JSON.stringify(SLO.toObject(data, domain), null, pretty ? 4 : 0);
+	}
+
+	/** Converts entities into raw objects */
+	static toObject(data:DataObject|Array<DataObject>, domain:Domain = 'tech') : object {
+		return SLO.#traverse(data, $ => $, (obj:any) => {
+			if(obj instanceof DataObject){
+				return Object.assign([], DataObject.$meta(obj, domain))
+			}else if(Array.isArray(data)){
+				return [];
+			}else{
+				return obj;
+			}
+		});
+	}
+
 	/** Applies a function to every node of the given data */
-	static #visitor(data:any, fn:(val:any) => any) : any {
+	static #traverse(data:any, fn:(val:any) => any, init?:(val:any) => any) : any {
 		if(data instanceof Object){
-			const obj:{[k:string]:any} = {}
+			const obj:{[k:string]:any} = init ? init(data) : {};
 			for(const key in data){
-				obj[key] = fn(data[key]);
+				obj[key] = SLO.#traverse(data[key], fn, init);
 			}
 			return fn(obj);
 		}
 		if(Array.isArray(data)){
-			const arr = [];
+			const arr = init ? init(data) : [];
 			for(const e of data){
-				arr.push(fn(e));
+				arr.push(SLO.#traverse(e, fn, init));
 			}
 			return fn(arr);
 		}

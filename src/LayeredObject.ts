@@ -77,16 +77,6 @@ export abstract class DataObject extends LayeredObject {
 			throw new Error(`Type mismatch: expected ${this.name} but got ${obj.constructor.name}`);
 		}
 	}
-	
-	/** Converts into a JSON strings */
-	toJSON(domain:Domain = 'tech', pretty:boolean = false) : string {
-		return DataObject.Serializer.toJSON(this, domain, pretty);
-	}
-
-	/** Converts into a plain object */
-	toObject(domain:Domain = 'tech') : object {
-		return DataObject.Serializer.toObject(this, domain);
-	}
 
 
 
