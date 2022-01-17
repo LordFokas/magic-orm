@@ -54,19 +54,19 @@ export abstract class DataObject extends LayeredObject {
 	/** Transforms a JSON structure into concrete entities */
 	static fromJSON<T extends DataObject>(this:typeof DataObject&Class<T>, data:string, domain:Domain = 'auto') : T {
 		const result = DataObject.Serializer.fromJSON<T>(data, domain);
-		this.#validateOwnType(result);
+		this.$validateOwnType(result);
 		return result;
 	}
 
 	/** Transforms an object into concrete entities */
 	static fromObject<T extends DataObject>(this:typeof DataObject&Class<T>, data:object, domain:Domain = 'auto') : T {
 		const result = DataObject.Serializer.fromObject<T>(data, domain);
-		this.#validateOwnType(result);
+		this.$validateOwnType(result);
 		return result;
 	}
 
 	/** Validate that a type has a correct structure */
-	static #validateOwnType<T extends DataObject>(this:typeof DataObject&Class<T>, obj:T) : void {
+	protected static $validateOwnType<T extends DataObject>(this:typeof DataObject&Class<T>, obj:T) : void {
 		if(!(obj instanceof DataObject)){
 			throw new Error("Input payload is not a recognized model");
 		}
