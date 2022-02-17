@@ -111,7 +111,7 @@ export class UpdateBuilder extends QueryBuilder {
 
 	async execute(db:Connection) : Promise<any> {
 		const sql:string[] = [];
-		sql.push('UPDATE ' + this.table);
+		sql.push('UPDATE ' + this.table());
 		sql.push('SET ' + this.fields().map(f => f+' = ?').join(', '));
 		this.injectConditions(sql);
 		return await db.execute(sql, this.params());
