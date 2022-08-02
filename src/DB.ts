@@ -163,7 +163,8 @@ class DBUtil {
 		}
 
 		const sqlc:Color = locked ? 'red' : 'blue';
-		const prmc:Color = 'green';
+		const strc:Color = 'green';
+		const prmc:Color = 'yellow';
 		params = [...params]; // clone array
 		const query = sql.replace(/\sAS\s"[A-Z]{2}[a-z_]+"/g, '').split(regex);
 		pretty.style('reset','bright');
@@ -174,7 +175,8 @@ class DBUtil {
 				query.shift();
 			}
 			if(params.length > 0){
-				pretty.color(prmc).write(params.shift());
+				const param = params.shift();
+				pretty.color(typeof param === "string" ? strc : prmc).write(param);
 			}
 		}
 
