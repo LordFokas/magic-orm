@@ -8,11 +8,13 @@ import {
 	type Class
 } from './Structures.js';
 
+import { Serializer } from './Serializer.js';
+
 /** Base class for the layered entities. */
 export class LayeredObject {
 	static #entities:ForwardMap = { DLO: {}, BSO: {}, raw: {} };
 	static #reverse:ReverseMap = { };
-	static Serializer:EntitySerializer;
+	static readonly Serializer:EntitySerializer = Serializer;
 
 	/** Add a layered Entity to the mappings */
 	static $put(entity:typeof DataObject){

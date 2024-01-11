@@ -1,17 +1,17 @@
-import { LayeredObject, DataObject } from '../LayeredObject.js';
-import { type EntityRef, type Domain } from '../Structures.js';
+import { LayeredObject, DataObject } from './LayeredObject.js';
+import { type EntityRef, type Domain } from './Structures.js';
 
-export class SLO extends LayeredObject {
+export class Serializer {
 	/** Transforms a JSON structure into concrete entities */
 	static fromJSON<T extends DataObject>(data:string, domain:Domain = 'auto') : T {
 		if(typeof data !== 'string')
 			throw new Error('Expected data type to be string');
-		return JSON.parse(data, (k, obj) => SLO.#reviver(obj, domain));
+		return JSON.parse(data, (k, obj) => Serializer.#reviver(obj, domain));
 	}
 
 	/** Transforms an object into concrete entities */
 	static fromObject<T extends DataObject>(data:object, domain:Domain = 'auto') : T {
-		return SLO.#traverse(data, (obj:any) => SLO.#reviver(obj, domain));
+		return Serializer.#traverse(data, (obj:any) => Serializer.#reviver(obj, domain));
 	}
 
 	/** Deserialization function */
@@ -45,12 +45,12 @@ export class SLO extends LayeredObject {
 
 	/** Converts entities into JSON strings. */
 	static toJSON(data:DataObject|Array<DataObject>, domain:Domain = 'tech', pretty:boolean = false) : string {
-		return JSON.stringify(SLO.toObject(data, domain), null, pretty ? 4 : 0);
+		return JSON.stringify(Serializer.toObject(data, domain), null, pretty ? 4 : 0);
 	}
 
 	/** Converts entities into raw objects */
 	static toObject(data:DataObject|Array<DataObject>, domain:Domain = 'tech') : object {
-		return SLO.#traverse(data, $ => $, (obj:any) => {
+		return Serializer.#traverse(data, $ => $, (obj:any) => {
 			if(obj instanceof DataObject){
 				return Object.assign({}, DataObject.$meta(obj, domain))
 			}else if(Array.isArray(data)){
@@ -66,19 +66,17 @@ export class SLO extends LayeredObject {
 		if(data instanceof Object){
 			const obj:{[k:string]:any} = init ? init(data) : {};
 			for(const key in data){
-				obj[key] = SLO.#traverse(data[key], fn, init);
+				obj[key] = Serializer.#traverse(data[key], fn, init);
 			}
 			return fn(obj);
 		}
 		if(Array.isArray(data)){
 			const arr = init ? init(data) : [];
 			for(const e of data){
-				arr.push(SLO.#traverse(e, fn, init));
+				arr.push(Serializer.#traverse(e, fn, init));
 			}
 			return fn(arr);
 		}
 		return data;
 	}
 }
-
-LayeredObject.Serializer = SLO;

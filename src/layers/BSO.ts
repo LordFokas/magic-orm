@@ -207,6 +207,8 @@ export class BSO extends DataObject {
 				}
 			}else{
 				const type = expand.type;
+				for(const bso of bsos)(bso as Record<string, any>)[type.expandname] = [];
+				
 				const link = `uuid_${dloClass.linkname}`;
 				const dlos = await type[expand.exec](db, ...expand.params, [{col: link, in: uuids}]);
 				dlos.map(dlo => index[((dlo as any)[link] as string)].useExpand(dlo));

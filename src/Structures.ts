@@ -81,3 +81,50 @@ export interface LoadParamsExpand<T extends typeof DLO | typeof BSO> extends Loa
 	noBulk?: boolean
 }
 //#endregion
+
+
+
+//#region Model Linkage Types
+export type Linkage<L extends string, E extends string> = { lnk:L; exp:E; };
+export type LName<T extends Linkage<any, any>> = T['lnk'];
+export type EName<T extends Linkage<any, any>> = T['exp'];
+
+export type Links   <R extends Linkage<any, any>, T> = Record<LName<R>, T>;
+export type Expands <R extends Linkage<any, any>, T> = Record<EName<R>, T>;
+//#endregion
+
+
+
+//#region DLO/BSO Static Interfaces
+export function DLOStatic <
+    R extends Linkage<any, any>,
+    K extends NS,
+    T extends string,
+    S extends UUIDSize
+> () {
+    return <U extends DLOStaticDef<R,K,T,S>>(constructor: U, _context:any) => {constructor};
+}
+
+interface DLOStaticDef<
+    R extends Linkage<any, any>,
+    K extends NS,
+    T extends string,
+    S extends UUIDSize
+> {
+    readonly expandname:EName<R>;
+    readonly linkname:LName<R>;
+    readonly uuidsize:S;
+    readonly prefix:K;
+    readonly table:T;
+    readonly booleans:string[];
+    readonly fields:Record<string, string[]>;
+}
+
+export function BSOStatic() {
+    return <U extends BSOStaticDef>(constructor: U, _context:any) => {constructor};
+}
+
+interface BSOStaticDef{
+    readonly inflates:InflationMap;
+}
+//#endregion
