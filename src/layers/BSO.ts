@@ -10,7 +10,7 @@ import {
 	type SkipUUID, type ArrayPromise
 } from '../Structures.js';
 
-import { Logger } from 'loggamus';
+import { Logger } from '@lordfokas/loggamus';
 
 type DLOReference = { [key:string]: typeof DLO; }
 type DLOMap = {[key:string]: DLOReference }

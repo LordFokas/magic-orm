@@ -2,7 +2,7 @@ import util from 'node:util';
 
 import Pool from 'pg-pool';
 import { QueryArrayResult, type Client, type PoolClient } from 'pg';
-import { Logger, LogLevel, PrettyPrinter, Pipe, type Color, type Options } from 'loggamus';
+import { Logger, LogLevel, PrettyPrinter, Pipe, type Color, type Options } from '@lordfokas/loggamus';
 
 
 const DBCONN  = new LogLevel("DBCONN" , 35);
