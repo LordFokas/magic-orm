@@ -96,6 +96,15 @@ export class Connection{
 		return await this.#query(sql);
 	}
 
+	/**
+	 * Sets the current path to a given list of schemas.
+	 * @param schemas varargs list of schemas to use.
+	 */
+	async schema(...schemas:string[]){
+		const query = "SET search_path TO " + schemas.join(', ');
+		await this.DANGEROUSLY(query);
+	}
+
 	#query = async function wrap_query(sql:string, values?:any[]){
 		if(this.#conn){
 			return await this.#conn.query(sql, values);
