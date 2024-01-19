@@ -1,11 +1,30 @@
-import { type DataObject } from './LayeredObject.js';
-import { type DLO } from './layers/DLO.js';
-import { type BSO } from './layers/BSO.js';
+import { type Entity } from "./Entity.js";
 
-
-
-export { type ArrayPromise } from './Hacks.js';
 export interface Class<T> { new (...$:any) : T }
+
+export interface EntitySerializer {
+	fromJSON<T extends Entity>(data:string) : T
+	fromObject<T extends Entity>(data:object) : T
+	toJSON(data:Entity|Array<Entity>, pretty:boolean) : string
+	toObject(data:Entity|Array<Entity>) : object
+}
+
+export interface EntityConfig {
+	linkname: string
+    expandname: string
+    prefix: NS
+    table: string
+
+    uuidsize: UUIDSize
+    booleans?: string[]
+    order?: string[]
+    fields: TableFields
+	inflates: InflationMap
+}
+
+export type TableFields = {
+    "*": string[];
+} & Record<string, string[]>;
 
 
 
@@ -13,6 +32,7 @@ export interface Class<T> { new (...$:any) : T }
 type $$C = 'A'|'B'|'C'|'D'|'E'|'F'|'G'|'H'|'I'|'J'|'K'|'L'|'M'|'N'|'O'|'P'|'Q'|'R'|'S'|'T'|'U'|'V'|'W'|'X'|'Y'|'Z';
 export type NS = `${$$C}${$$C}`;
 export type UUID<T extends NS> = `${T}::${string}`;
+
 export interface NamespacedUUID<K extends NS> { uuid: UUID<K> }
 
 /** small (12+4), standard (32+8), long(48+10), huge (64+13) */
@@ -22,62 +42,27 @@ export type SkipUUID = "skip_uuid_gen"|false;
 
 
 
-//#region Entity Serialization
-export type Domain = "full"|"base"|"tech"|"auto";
-export type Level = "DLO"|"BSO"|"raw";
-export interface ForwardMap {
-	DLO: DataObjectIndex;
-	BSO: DataObjectIndex;
-	raw: DataObjectIndex;
-}
-interface DataObjectIndex {
-	[key:string]: typeof DataObject;
-}
-export interface ReverseMap {
-	[key:string] : EntityDef;
-}
-interface EntityDef {
-	full: EntityRef;
-	base: EntityRef;
-	tech: EntityRef;
-	auto?: never;
-}
-export interface EntityRef {
-	'@type': string;
-	'@level'?: Level;
-}
-export interface EntitySerializer {
-	fromJSON<T extends DataObject>(data:string, domain:Domain) : T
-	fromObject<T extends DataObject>(data:object, domain:Domain) : T
-	toJSON(data:DataObject|Array<DataObject>, domain:Domain, pretty:boolean) : string
-	toObject(data:DataObject|Array<DataObject>, domain:Domain) : object
-}
-//#endregion
-
-
-
-//#region BSO Inflation
-export type InflationMap = InflationMapGeneric<typeof DLO | typeof BSO>;
-export interface InflationMapGeneric<T extends typeof DLO | typeof BSO>{
+//#region Entity Inflation
+export interface InflationMap {
 	[key:string]: {
-		self: LoadParams
-		links: LoadParamsLink<T>[]
-		expands: LoadParamsExpand<T>[]
+		self: LoadParamsSelf
+		links: LoadParamsLink[]
+		expands: LoadParamsExpand[]
 	}
 }
 
-export interface LoadParams { 
+export interface LoadParamsSelf { 
 	exec: string
 	params: string[]
 }
 
-export interface LoadParamsLink<T extends typeof DLO | typeof BSO> extends LoadParams {
-	type: T
+export interface LoadParamsLink extends LoadParamsSelf {
+	type: typeof Entity
 	reverse?: boolean
 }
 
-export interface LoadParamsExpand<T extends typeof DLO | typeof BSO> extends LoadParams {
-	type: T
+export interface LoadParamsExpand extends LoadParamsSelf {
+	type: typeof Entity
 	noBulk?: boolean
 }
 //#endregion
@@ -91,40 +76,4 @@ export type EName<T extends Linkage<any, any>> = T['exp'];
 
 export type Links   <R extends Linkage<any, any>, T> = Record<LName<R>, T>;
 export type Expands <R extends Linkage<any, any>, T> = Record<EName<R>, T>;
-//#endregion
-
-
-
-//#region DLO/BSO Static Interfaces
-export function DLOStatic <
-    R extends Linkage<any, any>,
-    K extends NS,
-    T extends string,
-    S extends UUIDSize
-> () {
-    return <U extends DLOStaticDef<R,K,T,S>>(constructor: U, _context:any) => {constructor};
-}
-
-interface DLOStaticDef<
-    R extends Linkage<any, any>,
-    K extends NS,
-    T extends string,
-    S extends UUIDSize
-> {
-    readonly expandname:EName<R>;
-    readonly linkname:LName<R>;
-    readonly uuidsize:S;
-    readonly prefix:K;
-    readonly table:T;
-    readonly booleans:string[];
-    readonly fields:Record<string, string[]>;
-}
-
-export function BSOStatic() {
-    return <U extends BSOStaticDef>(constructor: U, _context:any) => {constructor};
-}
-
-interface BSOStaticDef{
-    readonly inflates:InflationMap;
-}
 //#endregion

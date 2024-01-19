@@ -1,8 +1,8 @@
 import { type Connection } from './DB.js';
-import { DataObject } from './LayeredObject.js';
+import { DataObject } from './old/LayeredObject.js';
 
-import { DLO } from './layers/DLO.js';
-import { BSO } from './layers/BSO.js';
+import { DLO } from './old/DLO.js';
+import { BSO } from './old/BSO.js';
 
 
 // ################################################################################################
