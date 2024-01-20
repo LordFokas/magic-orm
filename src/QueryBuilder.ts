@@ -1,5 +1,6 @@
 import { type Connection } from './DB.js';
 import { Entity } from './Entity.js';
+import { Primitive } from './Structures.js';
 
 export class QueryBuilder {
 	#conds:string[] = [];
@@ -117,8 +118,6 @@ export class UpdateBuilder extends QueryBuilder {
 		return await db.execute(sql, this.params());
 	}
 }
-
-type Primitive = string | number | boolean;
 
 type FilterAny = FilterIn & FilterVar & FilterVal;
 export type Filter = FilterIn | FilterVar | FilterVal;

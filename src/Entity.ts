@@ -5,7 +5,7 @@ import { Logger } from '@lordfokas/loggamus';
 
 import { type Connection } from './DB.js';
 import { SelectBuilder, UpdateBuilder, type Filter, Chain } from './QueryBuilder.js';
-import { Class, NS, UUID, SkipUUID, NamespacedUUID, EntityConfig } from './Structures.js';
+import { Class, NS, UUID, SkipUUID, NamespacedUUID, EntityConfig, Primitive } from './Structures.js';
 import { Serializer } from './Serializer.js';
 
 const logger:Logger = Logger.getDefault();
@@ -75,17 +75,17 @@ export class Entity {
 	/** Insert all of an Entity's links (parents). These are required before the Entity is inserted */
 	static async #insertLinks(db:Connection, entity:Entity) : Promise<void> {
 		await Entity.forEachLink(entity, async lnk => {
-			const parent = (entity as any)[lnk.$config.linkname] as Entity;
+			const parent = entity[lnk.$config.linkname] as Entity;
 			if(!parent) return;
 			parent.insert(db);
-			(entity as any)[`uuid_${lnk.$config.linkname}`] = parent.uuid;
+			entity[`uuid_${lnk.$config.linkname}`] = parent.uuid;
 		});
 	}
 
 	/** Insert this Entity's expands (children). This has to be the last insertion step */
 	static async #insertExpands(db:Connection, entity:Entity) : Promise<void> {
 		await Entity.forEachExpand(entity, async exp => {
-			const children = (entity as any)[exp.$config.expandname] as Entity[];
+			const children = entity[exp.$config.expandname] as Entity[];
 			if(!children || children.length < 1) return;
 			const link = this.$config.linkname;
 			for(const child of children){
@@ -98,15 +98,15 @@ export class Entity {
 
     // #region Composite Read // ==================================================================
 	/** Query and inflate Entities. This entails recursion and complexity */
-	static async inflate(db:false, inflate:string, ...params:(boolean|string|number)[]) : Promise<SelectBuilder>; // @ts-ignore
-	static async inflate<T>(this: typeof Entity & Class<T>, db:Connection, inflate:string, ...params:(boolean|string|number)[]) : ArrayPromise<T>;
-	static async inflate<T>(this: typeof Entity & Class<T>, db:Connection|false, inflate:string, ...params:(boolean|string|number)[]) : Promise<T[] | SelectBuilder> {
+	static async inflate(db:false, inflate:string, ...params:Primitive[]) : Promise<SelectBuilder>; // @ts-ignore
+	static async inflate<T>(this: typeof Entity & Class<T>, db:Connection, inflate:string, ...params:Primitive[]) : Promise<T[]>;
+	static async inflate<T>(this: typeof Entity & Class<T>, db:Connection|false, inflate:string, ...params:Primitive[]) : Promise<T[] | SelectBuilder> {
 		const { self, links, expands } = this.$config.inflates[inflate];
 
 		// load self and links' main bodies with a single query
 		const query:SelectBuilder = await this[self.exec](false, ...params, ...self.params);
 		for(const link of links){
-			query.join(await link.type[link.exec](false, ...link.params) as SelectBuilder, link.reverse);
+			query.join(await link.type[link.exec](false, ...link.params), link.reverse);
 		}
 		if(db === false) return query;
 
@@ -147,23 +147,25 @@ export class Entity {
 						{col: `uuid_${this.$config.linkname}`, var: entity.uuid}
 					]);
 					const exp = type.$config.expandname;
-					(entity as any)[exp] = children;
+					entity[exp] = children;
 				}
 			}else{
 				const type = expand.type;
-				for(const entity of entities)(entity as Record<string, any>)[type.$config.expandname] = [];
+				for(const entity of entities){
+					entity[type.$config.expandname] = [];
+				}
 				
 				const link = `uuid_${this.$config.linkname}`;
 				const children = await type[expand.exec](db, ...expand.params, [{col: link, in: uuids}]);
-				children.map(child => index[((child as any)[link] as string)].useExpand(child));
+				children.map(child => index[(child[link] as string)].useExpand(child));
 			}
 		}
 
-		return entities as any as T[];
+		return entities as T[];
 	}
 
 	/** ??? */
-	static recursiveLink(entity:Entity, row:object, type:typeof Entity, chains?:Chain[]) : void {
+	static recursiveLink(entity:Entity, row:object, type:typeof Entity, chains?:Chain[]){
 		const child = new type().$ingest(row);
         chains?.filter(c => c.parent == type).map(c => {
             Entity.recursiveLink(child, row, c.child);
@@ -172,7 +174,7 @@ export class Entity {
 	}
 
 	/** ??? */
-	async recursiveExpand(db:Connection, inflate:string) : Promise<void> {
+	async recursiveExpand(db:Connection, inflate:string){
 		const { self, links, expands } = this.$config.inflates[inflate];
 		const linkname = this.$config.linkname;
 		for(const expand of expands){
@@ -181,12 +183,14 @@ export class Entity {
 				{col: `uuid_${linkname}`, var: this.uuid}
 			]);
 			const exp = type.$config.expandname;
-			(this as any)[exp] = dlos;
+			this[exp] = dlos;
 		}
 
 		for(const link of links){
-			const child = (this as any)[link.type.$config.linkname];
-            if(child) await child.recursiveExpand(db, ...link.params);
+			const child = this[link.type.$config.linkname];
+            if(child){
+				await child.recursiveExpand(db, ...link.params);
+			}
 		}
 	}
     // #endregion
@@ -194,28 +198,22 @@ export class Entity {
     // #region Static Primitive Shortcuts // ======================================================
 	/** Get one entity from this table, by UUID. */
 	static async uuid <K extends NS, T extends NamespacedUUID<K>>
-	(this: typeof Entity & Class<T>, db:Connection, uuid:UUID<K>, select='*') // @ts-ignore
-	/********************************************************************/ :ArrayPromise<T>
-	{
+	(this: typeof Entity & Class<T>, db:Connection, uuid:UUID<K>, select='*') : Promise<T[]> {
         return await this.read(db, select, [
 			{col: 'uuid', var: uuid}
-		]) as T[];
+		]);
 	}
 
 	/** Get all the entities from this table */
-	static async all<T>(this: typeof Entity & Class<T>, db:Connection, select:string='*') // @ts-ignore
-	/********************************************************************************/ :ArrayPromise<T>
-	{
-		return await this.read(db, select) as T[];
+	static async all<T>(this: typeof Entity & Class<T>, db:Connection, select:string='*') : Promise<T[]> {
+		return await this.read(db, select);
 	}
 
 	/** Get all entities from this table where {field} is in {list}. */
-	static async in<T>(this: typeof Entity & Class<T>, db:Connection, field:string, list:string[], select='*') // @ts-ignore
-	/*****************************************************************************************************/ :ArrayPromise<T>
-	{
+	static async in<T>(this: typeof Entity & Class<T>, db:Connection, field:string, list:string[], select='*') : Promise<T[]> {
 		return await this.read(db, select, [
 			{col: field, in: list}
-		]) as T[];
+		]);
 	}
 
 	/** Extract from the Entity the values of the given columns */
@@ -267,8 +265,8 @@ export class Entity {
 	
 	/** Read one or more records from the database. If Connection === false returns the query builder instead */
 	static async read(db:false, select?:string, filters?:Filter[]) : Promise<SelectBuilder>;
-	static async read<T>(this: typeof Entity & (new (...a:any) => T), db:Connection, select?:string, filters?:Filter[]) : Promise<T[]>;
-	static async read<T>(this: typeof Entity & (new (...a:any) => T), db:Connection|false, select:string = '*', filters:Filter[] = []) : Promise<T[] | SelectBuilder>{
+	static async read<T>(this: typeof Entity & Class<T>, db:Connection, select?:string, filters?:Filter[]) : Promise<T[]>;
+	static async read<T>(this: typeof Entity & Class<T>, db:Connection|false, select:string = '*', filters:Filter[] = []) : Promise<T[] | SelectBuilder>{
 		const query = this.select(select, filters);
 		if(db === false) return query;
 		const result = await query.execute(db);
@@ -314,7 +312,7 @@ export class Entity {
 		const prefix = this.$config.prefix + '_';
 		for(const [k, v] of Object.entries(row)){
 			if(k.startsWith(prefix)){
-				(this as any)[k.substring(3)] = v;
+				this[k.substring(3)] = v;
 			}
 		}
 		Entity.#booleans(this);
@@ -323,16 +321,16 @@ export class Entity {
 
     /** Use this entity as a link (instance of parent entity) */
 	useLink(entity: Entity) {
-		(this as any)[entity.$config.linkname] = entity;
+		this[entity.$config.linkname] = entity;
 	}
 
 	/** Use this entity as an expand (instance of child entity) */
-	useExpand(dlo: Entity) {
-		const field = dlo.$config.expandname;
-		if((this as any)[field]){
-            ((this as any)[field] as (Entity)[]).push(dlo);
+	useExpand(entity: Entity) {
+		const field = entity.$config.expandname;
+		if(this[field]){
+            (this[field] as (Entity)[]).push(entity);
         } else {
-            (this as any)[field] = [dlo];
+            this[field] = [entity];
         }
 	}
 
