@@ -42,12 +42,12 @@ export type SkipUUID = "skip_uuid_gen"|false;
 
 
 // Entity Inflation
-export interface InflationMap {
-	[key:string]: {
-		self: LoadParamsSelf
-		links: LoadParamsLink[]
-		expands: LoadParamsExpand[]
-	}
+export type InflationMap = Record<string, Inflation>;
+
+export interface Inflation {
+	self: LoadParamsSelf
+	links: LoadParamsLink[]
+	expands: LoadParamsExpand[]
 }
 
 export interface LoadParamsSelf { 

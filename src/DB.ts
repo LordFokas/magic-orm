@@ -59,7 +59,7 @@ export class DB {
 /** A database connection to execute queries on. */
 export class Connection{
 	#under_lock:boolean = false;
-	#conn:PGClient = null;
+	#conn:PGClient|null = null;
 
 	constructor(conn:PGClient){
 		this.#conn = conn;
