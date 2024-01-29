@@ -12,6 +12,19 @@ const DBQUERY = new LogLevel("DBQUERY", 22);
 let $logger:Logger;
 let $pool:Pool<Client>;
 
+/** Define a new logger to send output to */
+export function useLogger(logger:Logger, options?:Options) : void {
+	$logger = logger.child('DB', options || {
+		mintrace: LogLevel.ERROR,
+		tracedepth: 5,
+		styles: {
+			'DBCONN'  : { color: 'yellow', mods: ['underline'] },
+			'DBLOCK'  : { color: 'red'   , mods: ['underline'] },
+			'DBQUERY' : { color: 'white' , mods: ['bright']    }
+		}
+	})
+}
+
 // Picks up PrettyPrinter output and pushes it back into the logging pipeline.
 class DBPipe extends Pipe {
 	usesRaw(){ return false; }
@@ -25,6 +38,7 @@ class DBPipe extends Pipe {
 const pretty = new PrettyPrinter(new DBPipe());
 
 type PGClient = Client & PoolClient;
+
 
 /** The database connection manager */
 export class DB {
@@ -41,19 +55,6 @@ export class DB {
 		const conn:PGClient = await $pool.connect();
 		return new Connection(conn);
 	};
-
-	/** Define a new logger to send output to */
-	static useLogger(logger:Logger, options?:Options) : void {
-		$logger = logger.child('DB', options || {
-			mintrace: LogLevel.ERROR,
-			tracedepth: 5,
-			styles: {
-				'DBCONN'  : { color: 'yellow', mods: ['underline'] },
-				'DBLOCK'  : { color: 'red'   , mods: ['underline'] },
-				'DBQUERY' : { color: 'white' , mods: ['bright']    }
-			}
-		})
-	}
 }
 
 /** A database connection to execute queries on. */
@@ -192,5 +193,3 @@ class DBUtil {
 		pretty.flush(0);
 	}
 }
-
-DB.useLogger(Logger.getDefault());

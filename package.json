@@ -1,21 +1,19 @@
 {
-  "name": "@lordfokas/lasagna-orm",
+  "name": "@lordfokas/magic-orm",
   "type": "module",
-  "version": "3.0.0",
-  "description": "A simple layered ORM in TypeScript. Unorthodox and extremely opinionated, but made to fit my specific use cases.",
-  "repository": "https://github.com/LordFokas/lasagna-orm",
+  "version": "3.0.0-alpha.1",
+  "description": "A class-based ORM in TypeScript. Unorthodox and extremely opinionated, made to fit my specific use cases.",
+  "repository": "https://github.com/LordFokas/magic-orm",
   "main": "dist/index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "prebuild": "rm -rf ./dist",
+    "build": "tsc -p ./tsconfig.json",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
-    "lasagna",
-    "nodejs",
-    "typescript",
-    "orm",
-    "postgres",
-    "postgresql",
-    "pg"
+    "node", "nodejs",
+    "typescript", "orm",
+    "postgres", "postgresql", "pg"
   ],
   "author": "LordFokas",
   "license": "MIT",

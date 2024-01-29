@@ -8,7 +8,12 @@ import { SelectBuilder, UpdateBuilder, type Filter, Chain } from './QueryBuilder
 import { Class, NS, UUID, SkipUUID, NamespacedUUID, EntityConfig, Primitive, TableFields } from './Structures.js';
 import { Serializer } from './Serializer.js';
 
-const logger:Logger = Logger.getDefault();
+let $logger:Logger = Logger.getDefault();
+
+/** Define a new logger to send output to */
+export function useLogger(logger:Logger) : void {
+	$logger = logger;
+}
 
 type EntityReference = { [key:string]: typeof Entity; }
 type EntityMap = {[key:string]: EntityReference }
@@ -70,7 +75,7 @@ export class Entity {
 			await Entity.#insertExpands(db, entity);
 			await db.DANGEROUSLY("COMMIT");
 		}catch(error){
-			logger.error(error);
+			$logger.error(error);
 			await db.DANGEROUSLY("ROLLBACK");
 			throw error;
 		}

@@ -33,7 +33,7 @@ export class Serializer {
 			const ctor = this.#forward[obj["@type"]];
             if(!ctor) throw new Error(`Entity name "${obj["@type"]}" not recognized`);
             const entity = new ctor(obj);
-            delete entity["@type"];
+            delete (entity as any)["@type"];
 			return entity;
 		}else{
 			return val;
