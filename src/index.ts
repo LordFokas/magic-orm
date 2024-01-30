@@ -12,7 +12,7 @@ export {
     type Class, type Member,
     type UUID, type NamespacedUUID, type UUIDSize, type SkipUUID,
     type Linkage, type EName, type LName, type Expands, type Links,
-    type InflationMap
+    type InflationMap, type EntityConfig
 } from './Structures.js';
 
 export { Serializer } from './Serializer.js';

@@ -1,7 +1,7 @@
 {
   "name": "@lordfokas/magic-orm",
   "type": "module",
-  "version": "3.0.0-alpha.1",
+  "version": "3.0.0-alpha.2",
   "description": "A class-based ORM in TypeScript. Unorthodox and extremely opinionated, made to fit my specific use cases.",
   "repository": "https://github.com/LordFokas/magic-orm",
   "main": "dist/index.js",
