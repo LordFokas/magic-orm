@@ -1,5 +1,5 @@
+import { type Class } from "./Structures.js";
 import { Entity } from "./Entity.js";
-import { Class } from "./Structures.js";
 
 interface EType { '@type': string; }
 
@@ -32,8 +32,8 @@ export class Serializer {
 			const obj:object&EType = val;
 			const ctor = this.#forward[obj["@type"]];
             if(!ctor) throw new Error(`Entity name "${obj["@type"]}" not recognized`);
-            const entity = new ctor(obj);
-            delete (entity as any)["@type"];
+            const entity = new ctor(obj) as Entity & EType;
+            delete entity["@type"];
 			return entity;
 		}else{
 			return val;

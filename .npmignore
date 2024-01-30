@@ -1,9 +1,12 @@
 /examples
 /docs
 /src
+/src-bin
+/.sandbox
 
 *.js.map
 tsconfig.json
+tsconfig-bin.json
 
 *.log
 *.code-workspace

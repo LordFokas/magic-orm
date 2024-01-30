@@ -1,11 +1,10 @@
 import { useLogger as setDBLogger } from './DB.js';
 import { useLogger as setEntityLogger } from './Entity.js';
-import * as _h4x0rz from './Hacks.js';
-
 import { Logger } from '@lordfokas/loggamus';
 
 
 
+export * as _h4x0rz from './Hacks.js'; // required for Promise prototype fuckery
 export { DB, type Connection } from './DB.js';
 
 export {
@@ -17,7 +16,7 @@ export {
 
 export { Serializer } from './Serializer.js';
 
-export { Entity } from './Entity.js';
+export { Entity, FieldSet, Inflate } from './Entity.js';
 
 
 

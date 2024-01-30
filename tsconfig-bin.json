@@ -1,0 +1,16 @@
+{
+    "compilerOptions": {
+		"esModuleInterop": true,
+		"outDir": "bin/",
+		"moduleResolution": "node",
+		"module": "ES2020",
+		"target": "ESNext",
+		"useDefineForClassFields": true,
+
+		"noImplicitAny": true,
+		"skipLibCheck": true
+    },
+    "files": [
+        "src-bin/magic-orm.ts"
+    ]
+}

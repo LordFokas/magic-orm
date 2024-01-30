@@ -1,9 +1,13 @@
 # Dependency directories
 node_modules/
 
-# compilation outputs
+# Compilation outputs
 dist
+bin
 
 # Editors
 *.sublime-*
 *.code-workspace
+
+# Testing
+.sandbox
