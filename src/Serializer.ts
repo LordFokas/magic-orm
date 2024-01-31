@@ -1,58 +1,57 @@
-import { LayeredObject, DataObject } from './LayeredObject.js';
-import { type EntityRef, type Domain } from './Structures.js';
+import { type Class } from "./Structures.js";
+import { Entity } from "./Entity.js";
+
+interface EType { '@type': string; }
 
 export class Serializer {
+    /** Entity name to Entity Class map */
+    static readonly #forward:Record<string, Class<Entity>> = {};
+    /** Entity Class name to Entity name map */
+    static readonly #reverse:Record<string, string> = {};
+
+    static register<T extends Entity>(entity: Class<T>, name: string){
+        this.#forward[name] = entity;
+        this.#reverse[entity.name] = name;
+    }
+
 	/** Transforms a JSON structure into concrete entities */
-	static fromJSON<T extends DataObject>(data:string, domain:Domain = 'auto') : T {
+	static fromJSON<T extends Entity>(data:string) : T {
 		if(typeof data !== 'string')
 			throw new Error('Expected data type to be string');
-		return JSON.parse(data, (k, obj) => Serializer.#reviver(obj, domain));
+		return JSON.parse(data, (k, obj) => Serializer.#reviver(obj));
 	}
 
 	/** Transforms an object into concrete entities */
-	static fromObject<T extends DataObject>(data:object, domain:Domain = 'auto') : T {
-		return Serializer.#traverse(data, (obj:any) => Serializer.#reviver(obj, domain));
+	static fromObject<T extends Entity>(data:object) : T {
+		return Serializer.#traverse(data, (obj:any) => Serializer.#reviver(obj));
 	}
 
 	/** Deserialization function */
-	static #reviver(val:any, domain:Domain) : any {
+	static #reviver(val:any) : any {
 		if(val instanceof Object && val['@type']){
-			const obj:object&EntityRef = val;
-			let ctor:typeof DataObject;
-			switch(domain){
-				case 'tech':
-					ctor = LayeredObject.$get('raw', obj['@type']);
-					delete obj['@type'];
-					break;
-				case 'full':
-					ctor = LayeredObject.$get(obj['@level'], obj['@type']);
-					delete obj['@type'];
-					delete obj['@level'];
-					break;
-				case 'auto':
-					const level = obj.isHigherOrder() ? 'BSO' : 'DLO';
-					ctor = LayeredObject.$get(level, obj['@type']);
-					delete obj['@type'];
-					delete obj['@level'];
-					break;
-				default: throw new Error(`Unsupported JSON domain: '${domain}'`);
-			}
-			return new (ctor as any as typeof LayeredObject)(obj);
+			const obj:object&EType = val;
+			const ctor = this.#forward[obj["@type"]];
+            if(!ctor) throw new Error(`Entity name "${obj["@type"]}" not recognized`);
+            const entity = new ctor(obj) as Entity & EType;
+            delete entity["@type"];
+			return entity;
 		}else{
 			return val;
 		}
 	}
 
 	/** Converts entities into JSON strings. */
-	static toJSON(data:DataObject|Array<DataObject>, domain:Domain = 'tech', pretty:boolean = false) : string {
-		return JSON.stringify(Serializer.toObject(data, domain), null, pretty ? 4 : 0);
+	static toJSON(data:Entity|Array<Entity>, pretty:boolean = false) : string {
+		return JSON.stringify(Serializer.toObject(data), null, pretty ? 4 : 0);
 	}
 
 	/** Converts entities into raw objects */
-	static toObject(data:DataObject|Array<DataObject>, domain:Domain = 'tech') : object {
+	static toObject(data:Entity|Array<Entity>) : object {
 		return Serializer.#traverse(data, $ => $, (obj:any) => {
-			if(obj instanceof DataObject){
-				return Object.assign({}, DataObject.$meta(obj, domain))
+			if(obj instanceof Entity){
+                const type = this.#reverse[obj.constructor.name];
+                if(!type) throw new Error(`Entity class "${obj.constructor.name}" not recognized`);
+				return { "@type": type };
 			}else if(Array.isArray(data)){
 				return [];
 			}else{

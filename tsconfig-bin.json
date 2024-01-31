@@ -1,9 +1,7 @@
 {
     "compilerOptions": {
 		"esModuleInterop": true,
-		"outDir": "dist/",
-		"sourceMap": true,
-		"declaration": true,
+		"outDir": "bin/",
 		"moduleResolution": "node",
 		"module": "ES2020",
 		"target": "ESNext",
@@ -13,6 +11,6 @@
 		"skipLibCheck": true
     },
     "files": [
-        "src/index.ts"
+        "src-bin/magic-orm.ts"
     ]
 }

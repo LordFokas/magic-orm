@@ -1,15 +1,14 @@
 {
-  "name": "@lordfokas/lasagna-orm",
+  "name": "@lordfokas/magic-orm",
   "type": "module",
-  "version": "2.1.0",
-  "description": "A simple layered ORM in TypeScript. Unorthodox and extremely opinionated, but made to fit my specific use cases.",
-  "repository": "https://github.com/LordFokas/lasagna-orm",
+  "version": "3.0.0-alpha.3",
+  "author": "LordFokas",
+  "license": "MIT",
+  "description": "A class-based ORM in TypeScript. Unorthodox and extremely opinionated, made to fit my specific use cases.",
+  "repository": "https://github.com/LordFokas/magic-orm",
   "main": "dist/index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
   "keywords": [
-    "lasagna",
+    "node",
     "nodejs",
     "typescript",
     "orm",
@@ -17,8 +16,16 @@
     "postgresql",
     "pg"
   ],
-  "author": "LordFokas",
-  "license": "MIT",
+  "scripts": {
+    "prebuild": "rm -rf ./dist",
+    "build": "tsc -p ./tsconfig.json",
+    "prebuild-bin": "rm -rf ./bin",
+    "build-bin": "tsc -p ./tsconfig-bin.json",
+    "prepublishOnly": "npm run build && npm run build-bin"
+  },
+  "bin": {
+    "magic-orm": "bin/magic-orm.js"
+  },
   "devDependencies": {
     "@types/node": "^20.11.0",
     "@types/pg": "^8.10.9",
@@ -27,6 +34,7 @@
   },
   "dependencies": {
     "@lordfokas/loggamus": "^2.0.1",
+    "commander": "^11.1.0",
     "pg": "^8.11.3",
     "uuid": "^9.0.1"
   }
