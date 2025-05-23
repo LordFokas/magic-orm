@@ -187,7 +187,10 @@ export class Entity {
 	 * Also applies to children of linked parent entities, including self.
 	 */
 	private async recursiveExpand(db:Connection, inflate:string){
-		const { self, links, expands } = this.$config.inflates[inflate];
+		const map = this.$config.inflates[inflate];
+		if(map === undefined) return;
+
+		const { self, links, expands } = map;
 		const linkname = this.$config.linkname;
 		for(const expand of expands){
 			const type = expand.type;
