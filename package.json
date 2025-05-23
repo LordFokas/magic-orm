@@ -30,7 +30,8 @@
     "@types/node": "^20.11.0",
     "@types/pg": "^8.10.9",
     "@types/pg-pool": "^2.0.6",
-    "@types/uuid": "^9.0.7"
+    "@types/uuid": "^9.0.7",
+    "typescript": "^5.8.3"
   },
   "dependencies": {
     "@lordfokas/loggamus": "^2.0.1",
