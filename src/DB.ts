@@ -127,22 +127,24 @@ export class Connection {
 
 	/** Opens a new query containment level (table lock, transaction, etc) */
 	#open = async function open_container(sql: string) {
-		$logger.log("║".repeat(this.#containers) + "╙" + sql, DBLOCK);
+		pretty.style("reset", "bright").write("║".repeat(this.#containers) + "╓").style("reset").flush(0);
+		$logger.log(sql, DBLOCK);
 		this.#containers++;
-		return this.#query(sql);
+		return await this.#query(sql);
 	}
 
 	/** Closes top query containment level (table lock, transaction, etc) */
 	#close = async function close_container(sql: string) {
 		this.#containers--;
-		$logger.log("║".repeat(this.#containers) + "╓" + sql, DBLOCK);
-		return this.#query(sql);
+		pretty.style("reset", "bright").write("║".repeat(this.#containers) + "╙").style("reset").flush(0);
+		$logger.log(sql, DBLOCK);
+		return await this.#query(sql);
 	}
 
 	/** Runs a raw SQL query. Should be used sparingly. */
 	#query = async function wrap_query(sql:string, values?:any[]){
 		if(this.#conn){
-			return this.#conn.query(sql, values);
+			return await this.#conn.query(sql, values);
 		}else{
 			throw new Error("Query failed because connection is no longer available");
 		}
@@ -216,7 +218,7 @@ class DBUtil {
 
 		const depth = "║".repeat(containers);
 		if(containers > 0) {
-			pretty.color(cont).write(depth);
+			pretty.style('reset').color(cont).write(depth).style('bright');
 		}
 		while(query.length > 0){
 			const str = query.shift();
@@ -224,7 +226,8 @@ class DBUtil {
 				const lines = str.split("\n");
 				pretty.color(sqlc).write(lines.shift());
 				for(const line of lines) {
-					pretty.color(cont).write(depth).color(sqlc).write(line);
+					pretty.style('reset').color(cont).write('\n', depth).style('bright');
+					pretty.color(sqlc).write(line);
 				}
 			} else {
 				pretty.color(sqlc).write(str);

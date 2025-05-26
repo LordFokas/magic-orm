@@ -68,7 +68,7 @@ export class Entity {
     // #region Static Composite Write // ==========================================================
 	/** Create an Entity in the database, along with all dependencies and relationships. */
 	static async createComposite(db:Connection, entity:Entity, skip:SkipUUID) : Promise<void> {
-		return db.atomic(async () => {
+		return await db.atomic(async () => {
 			await Entity.#insertLinks(db, entity);
             await entity.insert(db, skip)
 			await Entity.#insertExpands(db, entity);
@@ -77,7 +77,7 @@ export class Entity {
 
 	/** Insert all of an Entity's links (parents). These are required before the Entity is inserted */
 	static async #insertLinks(db:Connection, entity:Entity) : Promise<void> {
-		return Entity.forEachLink(entity, async lnk => {
+		return await Entity.forEachLink(entity, async lnk => {
 			const parent = (entity as any)[lnk.$config.linkname] as Entity;
 			if(!parent) return;
 			parent.insert(db);
@@ -87,7 +87,7 @@ export class Entity {
 
 	/** Insert this Entity's expands (children). This has to be the last insertion step */
 	static async #insertExpands(db:Connection, entity:Entity) : Promise<void> {
-		return Entity.forEachExpand(entity, async exp => {
+		return await Entity.forEachExpand(entity, async exp => {
 			const children = (entity as any)[exp.$config.expandname] as Entity[];
 			if(!children || children.length < 1) return;
 			const link = this.$config.linkname;
