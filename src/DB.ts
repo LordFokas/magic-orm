@@ -77,7 +77,7 @@ export class Connection {
 		DBUtil.validate(sql, values, this.#containers);
 		sql = DBUtil.pgps(sql); // convert ? to $x
 		const start:number = Date.now();
-		const result:QueryArrayResult = await this.#query(sql, DBUtil.patch(values));
+		const result:QueryArrayResult = await this.query(sql, DBUtil.patch(values));
 		const elapsed:number = Date.now() - start;
 		if(this.#containers > 0) {
 			pretty.color("red").write("║".repeat(this.#containers)).style('bright').reset();
@@ -96,7 +96,7 @@ export class Connection {
 	 */
 	async DANGEROUSLY(sql:string) : Promise<QueryArrayResult> {
 		$logger.log(sql, DBLOCK);
-		return await this.#query(sql);
+		return await this.query(sql);
 	}
 
 	/**
@@ -106,14 +106,14 @@ export class Connection {
 	async atomic <T>(fn: () => Promise<T>) : Promise<T> {
 		let success = false;
 		try {
-			await this.#open("BEGIN TRANSACTION");
+			await this.open("BEGIN TRANSACTION");
 			const result = await fn();
-			await this.#close("COMMIT");
+			await this.close("COMMIT");
 			success = true;
 			return result;
 		} finally {
 			if(!success) {
-				await this.#close("ROLLBACK");
+				await this.close("ROLLBACK");
 			}
 		}
 	}
@@ -125,25 +125,24 @@ export class Connection {
 	async schema(...schemas:string[]){
 		const query = "SET search_path TO " + schemas.join(', ');
 		$logger.log(query, DBCONN);
-		return this.#query(query);
+		return this.query(query);
 	}
 
 	/** Opens a new query containment level (table lock, transaction, etc) */
-	#open = async function open_container(sql: string) {
+	private async open(sql: string) {
 		$logger.log("║".repeat(this.#containers) + "╓"+sql, DBLOCK);
 		this.#containers++;
-		await this.#query(sql);
+		await this.query(sql);
 	}
 
 	/** Closes top query containment level (table lock, transaction, etc) */
-	#close = async function close_container(sql: string) {
+	private async close(sql: string) {
 		this.#containers--;
 		$logger.log("║".repeat(this.#containers) + "╙"+sql, DBLOCK);
-		await this.#query(sql);
+		await this.query(sql);
 	}
-
-	/** Runs a raw SQL query. Should be used sparingly. */
-	#query = async function wrap_query(sql:string, values?:any[]){
+	
+	private async query (sql:string, values?:any[]){
 		if(this.#conn){
 			return await this.#conn.query(sql, values);
 		}else{
