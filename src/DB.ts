@@ -58,8 +58,8 @@ export class DB {
 }
 
 /** A database connection to execute queries on. */
-export class Connection{
-	#under_lock:boolean = false;
+export class Connection {
+	#containers:number = 0;
 	#conn:PGClient|null = null;
 
 	constructor(conn:PGClient){
@@ -74,7 +74,7 @@ export class Connection{
 	 */
 	async execute(sql:string|string[], values:any[] = []) : Promise<QueryArrayResult> {
 		if(Array.isArray(sql)) sql = sql.join('\n');
-		DBUtil.validate(sql, values, this.#under_lock);
+		DBUtil.validate(sql, values, this.#containers);
 		sql = DBUtil.pgps(sql); // convert ? to $x
 		const start:number = Date.now();
 		const result:QueryArrayResult = await this.#query(sql, DBUtil.patch(values));
@@ -89,12 +89,26 @@ export class Connection{
 	 * Executes raw unprepared queries. Should be used solely to run commands unsupported by prepared statements, such as LOCKs
 	 * @param sql the raw SQL query to execute
 	 * @returns query results
+	 * @deprecated
 	 */
 	async DANGEROUSLY(sql:string) : Promise<QueryArrayResult> {
-		if(sql.startsWith("LOCK")) this.#under_lock = true;
-		else if(sql.startsWith("UNLOCK")) this.#under_lock = false;
 		$logger.log(sql, DBLOCK);
 		return await this.#query(sql);
+	}
+
+	async atomic <T>(fn: () => Promise<T>) : Promise<T> {
+		let success = false;
+		try {
+			this.#open("BEGIN TRANSACTION");
+			const result = await fn();
+			this.#close("COMMIT");
+			success = true;
+			return result;
+		} finally {
+			if(!success) {
+				this.#close("ROLLBACK");
+			}
+		}
 	}
 
 	/**
@@ -103,12 +117,28 @@ export class Connection{
 	 */
 	async schema(...schemas:string[]){
 		const query = "SET search_path TO " + schemas.join(', ');
-		await this.DANGEROUSLY(query);
+		$logger.log(query, DBCONN);
+		return this.#query(query);
 	}
 
+	/** Opens a new query containment level (table lock, transaction, etc) */
+	#open = async function open_container(sql: string) {
+		$logger.log("║".repeat(this.#containers) + "╙" + sql, DBLOCK);
+		this.#containers++;
+		return this.#query(sql);
+	}
+
+	/** Closes top query containment level (table lock, transaction, etc) */
+	#close = async function close_container(sql: string) {
+		this.#containers--;
+		$logger.log("║".repeat(this.#containers) + "╓" + sql, DBLOCK);
+		return this.#query(sql);
+	}
+
+	/** Runs a raw SQL query. Should be used sparingly. */
 	#query = async function wrap_query(sql:string, values?:any[]){
 		if(this.#conn){
-			return await this.#conn.query(sql, values);
+			return this.#conn.query(sql, values);
 		}else{
 			throw new Error("Query failed because connection is no longer available");
 		}
@@ -160,7 +190,7 @@ class DBUtil {
 	 * @param params PS replacement parameters
 	 * @param locked wether or not table locks are currently in effect
 	 */
-	static validate(sql:string, params:any[], locked:boolean) : void {
+	static validate(sql:string, params:any[], containers: number) : void {
 		const regex = /\?/g;
 		const plen = (sql.match(regex) || []).length;
 		const glen = params.length;
@@ -172,16 +202,30 @@ class DBUtil {
 			);
 		}
 
-		const sqlc:Color = locked ? 'red' : 'blue';
+		const cont:Color = 'red';
+		const sqlc:Color = 'blue';
 		const strc:Color = 'green';
 		const prmc:Color = 'yellow';
 		params = [...params]; // clone array
-		const query = sql.replace(/\sAS\s"[A-Z]{2}[a-z_]+"/g, '').split(regex);
+		const query = sql.replace(/\sAS\s"[A-Z]{2}[a-z0-9_]+"/g, '').split(regex);
 		pretty.style('reset','bright');
 
+		const depth = "║".repeat(containers);
+		if(containers > 0) {
+			pretty.color(cont).write(depth);
+		}
 		while(query.length > 0){
-			pretty.color(sqlc).write(query.shift());
-			if(query.length == 1 && query[0] == ''){
+			const str = query.shift();
+			if(containers > 0 && str.includes("\n")) {
+				const lines = str.split("\n");
+				pretty.color(sqlc).write(lines.shift());
+				for(const line of lines) {
+					pretty.color(cont).write(depth).color(sqlc).write(line);
+				}
+			} else {
+				pretty.color(sqlc).write(str);
+			}
+			if(query.length === 1 && query[0] === ''){
 				query.shift();
 			}
 			if(params.length > 0){
