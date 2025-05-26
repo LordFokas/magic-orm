@@ -79,6 +79,9 @@ export class Connection {
 		const start:number = Date.now();
 		const result:QueryArrayResult = await this.#query(sql, DBUtil.patch(values));
 		const elapsed:number = Date.now() - start;
+		if(this.#containers > 0) {
+			pretty.color("red").write("║".repeat(this.#containers)).style('bright').reset();
+		}
 		if(result.rowCount) pretty.write(`>> ${result.rowCount} rows `);
 		else pretty.color('black').write(`>> zero rows `);
 		pretty.color('black').write('in ', elapsed, ' ms').flush(0);
@@ -127,18 +130,16 @@ export class Connection {
 
 	/** Opens a new query containment level (table lock, transaction, etc) */
 	#open = async function open_container(sql: string) {
-		pretty.style("reset", "bright").write("║".repeat(this.#containers) + "╓").style("reset").flush(0);
-		$logger.log(sql, DBLOCK);
+		$logger.log("║".repeat(this.#containers) + "╓"+sql, DBLOCK);
 		this.#containers++;
-		return await this.#query(sql);
+		await this.#query(sql);
 	}
 
 	/** Closes top query containment level (table lock, transaction, etc) */
 	#close = async function close_container(sql: string) {
 		this.#containers--;
-		pretty.style("reset", "bright").write("║".repeat(this.#containers) + "╙").style("reset").flush(0);
-		$logger.log(sql, DBLOCK);
-		return await this.#query(sql);
+		$logger.log("║".repeat(this.#containers) + "╙"+sql, DBLOCK);
+		await this.#query(sql);
 	}
 
 	/** Runs a raw SQL query. Should be used sparingly. */
