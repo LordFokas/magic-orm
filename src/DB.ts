@@ -19,7 +19,7 @@ export function useLogger(logger:Logger, options?:Options) : void {
 		tracedepth: 5,
 		styles: {
 			'DBCONN'  : { color: 'yellow', mods: ['underline'] },
-			'DBLOCK'  : { color: 'red'   , mods: ['underline'] },
+			'DBLOCK'  : { color: 'red'   , mods: []            },
 			'DBQUERY' : { color: 'white' , mods: ['bright']    }
 		}
 	})
@@ -77,10 +77,10 @@ export class Connection {
 		DBUtil.validate(sql, values, this.#containers);
 		sql = DBUtil.pgps(sql); // convert ? to $x
 		const start:number = Date.now();
-		const result:QueryArrayResult = await this.query(sql, DBUtil.patch(values));
+		const result:QueryArrayResult = await this.#query(sql, DBUtil.patch(values));
 		const elapsed:number = Date.now() - start;
 		if(this.#containers > 0) {
-			pretty.color("red").write("║".repeat(this.#containers)).style('bright').reset();
+			pretty.reset().color("red").write("║ ".repeat(this.#containers)).reset().style('bright');
 		}
 		if(result.rowCount) pretty.write(`>> ${result.rowCount} rows `);
 		else pretty.color('black').write(`>> zero rows `);
@@ -94,9 +94,9 @@ export class Connection {
 	 * @returns query results
 	 * @deprecated
 	 */
-	async DANGEROUSLY(sql:string) : Promise<QueryArrayResult> {
+	DANGEROUSLY(sql:string) : Promise<QueryArrayResult> {
 		$logger.log(sql, DBLOCK);
-		return await this.query(sql);
+		return this.#query(sql);
 	}
 
 	/**
@@ -106,14 +106,14 @@ export class Connection {
 	async atomic <T>(fn: () => Promise<T>) : Promise<T> {
 		let success = false;
 		try {
-			await this.open("BEGIN TRANSACTION");
+			await this.#open("BEGIN TRANSACTION");
 			const result = await fn();
-			await this.close("COMMIT");
+			await this.#close("COMMIT");
 			success = true;
 			return result;
 		} finally {
 			if(!success) {
-				await this.close("ROLLBACK");
+				await this.#close("ROLLBACK");
 			}
 		}
 	}
@@ -122,29 +122,29 @@ export class Connection {
 	 * Sets the current path to a given list of schemas.
 	 * @param schemas varargs list of schemas to use.
 	 */
-	async schema(...schemas:string[]){
+	schema(...schemas:string[]) : Promise<void> {
 		const query = "SET search_path TO " + schemas.join(', ');
 		$logger.log(query, DBCONN);
-		return this.query(query);
+		return this.#query(query);
 	}
 
 	/** Opens a new query containment level (table lock, transaction, etc) */
-	private async open(sql: string) {
-		$logger.log("║".repeat(this.#containers) + "╓"+sql, DBLOCK);
+	#open = function open(sql: string) : Promise<void> {
+		$logger.log("║ ".repeat(this.#containers) + "╔═"+sql, DBLOCK);
 		this.#containers++;
-		await this.query(sql);
+		return this.#query(sql);
 	}
 
 	/** Closes top query containment level (table lock, transaction, etc) */
-	private async close(sql: string) {
+	#close = function close(sql: string) : Promise<void> {
 		this.#containers--;
-		$logger.log("║".repeat(this.#containers) + "╙"+sql, DBLOCK);
-		await this.query(sql);
+		$logger.log("║ ".repeat(this.#containers) + "╚═"+sql, DBLOCK);
+		return this.#query(sql);
 	}
-	
-	private async query (sql:string, values?:any[]){
+
+	#query = function query (sql:string, values?:any[]) : Promise<any> {
 		if(this.#conn){
-			return await this.#conn.query(sql, values);
+			return this.#conn.query(sql, values);
 		}else{
 			throw new Error("Query failed because connection is no longer available");
 		}
@@ -208,15 +208,17 @@ class DBUtil {
 			);
 		}
 
+
+		params = [...params]; // clone array
+		const query = sql.replace(/\sAS\s"[A-Z]{2}[a-z0-9_]+"/g, '').split(regex);
+
+		pretty.style('reset','bright');
 		const cont:Color = 'red';
 		const sqlc:Color = 'blue';
 		const strc:Color = 'green';
 		const prmc:Color = 'yellow';
-		params = [...params]; // clone array
-		const query = sql.replace(/\sAS\s"[A-Z]{2}[a-z0-9_]+"/g, '').split(regex);
-		pretty.style('reset','bright');
 
-		const depth = "║".repeat(containers);
+		const depth = "║ ".repeat(containers);
 		if(containers > 0) {
 			pretty.style('reset').color(cont).write(depth).style('bright');
 		}
