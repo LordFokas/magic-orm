@@ -96,17 +96,21 @@ export class Connection {
 		return await this.#query(sql);
 	}
 
+	/**
+	 * Runs an async function inside a new transaction.
+	 * Automatically commits at the end, and rollbacks on error.
+	 */
 	async atomic <T>(fn: () => Promise<T>) : Promise<T> {
 		let success = false;
 		try {
-			this.#open("BEGIN TRANSACTION");
+			await this.#open("BEGIN TRANSACTION");
 			const result = await fn();
-			this.#close("COMMIT");
+			await this.#close("COMMIT");
 			success = true;
 			return result;
 		} finally {
 			if(!success) {
-				this.#close("ROLLBACK");
+				await this.#close("ROLLBACK");
 			}
 		}
 	}
