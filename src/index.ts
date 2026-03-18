@@ -10,13 +10,12 @@ export { DB, type Connection } from './DB.js';
 export {
     type Class, type Member,
     type UUID, type NamespacedUUID, type UUIDSize, type SkipUUID,
-    type Linkage, type EName, type LName, type Expands, type Links,
-    type InflationMap, type EntityConfig
+    type EntityConfig, type Relationship as Relation
 } from './Structures.js';
 
 export { Serializer } from './Serializer.js';
 
-export { Entity, FieldSet, Inflate } from './Entity.js';
+export { Entity, FieldSet } from './Entity.js';
 
 
 

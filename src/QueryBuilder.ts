@@ -1,6 +1,6 @@
 import { type Connection } from './DB.js';
 import { Entity } from './Entity.js';
-import { Primitive } from './Structures.js';
+import { Primitive, Relationship } from './Structures.js';
 
 export class QueryBuilder {
 	#conds:string[] = [];
@@ -61,14 +61,12 @@ export class SelectBuilder extends QueryBuilder {
 		return this;
 	}
 
-	join(master:SelectBuilder, reverse:boolean = false){
+	join(master:SelectBuilder, relationship: Relationship){
+		const childCol = this.entity().COL(relationship.childField);
+		const parentCol = master.entity().COL(relationship.parentField);
+
 		this.fields().push(...master.fields());
-        const self:typeof Entity = this.entity();
-        const other:typeof Entity = master.entity();
-		const slavefield = (reverse ? self : other).$config.linkname;
-		const masterlink = (reverse ? other : self).COL(`uuid_${slavefield}`);
-		const masteruuid = (reverse ? self : other).COL('uuid');
-		this.#joins.push(`JOIN ${master.table()} ON ${masterlink} = ${masteruuid}`);
+		this.#joins.push(`JOIN ${master.table()} ON ${childCol} = ${parentCol}`);
 		this.#joins.push(...master.#joins);
 		this.conds().push(...master.conds());
 		this.params().push(...master.params());

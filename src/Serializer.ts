@@ -14,6 +14,10 @@ export class Serializer {
         this.#reverse[entity.name] = name;
     }
 
+	static lookup(name: string) {
+		return this.#forward[name];
+	}
+
 	/** Transforms a JSON structure into concrete entities */
 	static fromJSON<T extends Entity>(data:string) : T {
 		if(typeof data !== 'string')

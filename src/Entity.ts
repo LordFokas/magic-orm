@@ -4,7 +4,7 @@ const  UUIDv0 = () => '000000000000-0000-0000-0000-00000000';
 import { Logger } from '@lordfokas/loggamus';
 
 import { type Connection } from './DB.js';
-import { SelectBuilder, UpdateBuilder, type Filter, Chain } from './QueryBuilder.js';
+import { SelectBuilder, UpdateBuilder, type Filter } from './QueryBuilder.js';
 import { Class, NS, UUID, SkipUUID, NamespacedUUID, EntityConfig, Primitive, TableFields } from './Structures.js';
 import { Serializer } from './Serializer.js';
 
@@ -15,194 +15,15 @@ export function useLogger(logger:Logger) : void {
 	$logger = logger;
 }
 
-type EntityReference = { [key:string]: typeof Entity; }
-type EntityMap = {[key:string]: EntityReference }
 type EClass<T> = typeof Entity & Class<T>
 
 export type FieldSet<T extends typeof Entity> = keyof (T["$config"]["fields"]) & keyof TableFields;
-export type Inflate<T extends typeof Entity> = keyof (T["$config"]["inflates"]);
 
 export class Entity {
     static readonly Serializer = Serializer;
-    static readonly #links:EntityMap = {};
-	static readonly #expands:EntityMap = {};
 
     declare static readonly $config:EntityConfig;
     uuid?: UUID<NS>;
-
-    // #region Static Relationship Shortcuts // ===================================================
-    /** Create link-expansion relationships between entities. */
-	static link(child:typeof Entity, parent?:typeof Entity){
-		if(!parent) return {
-			to: (...ps:(typeof Entity)[]):any => ps.map(p => Entity.link(child, p))
-		};
-
-		if(!Entity.#links[child.name])
-			Entity.#links[child.name] = {};
-		const links = Entity.#links[child.name];
-		links[parent.$config.linkname] = parent;
-
-		if(!Entity.#expands[parent.name])
-			Entity.#expands[parent.name] = {};
-		const expands = Entity.#expands[parent.name];
-		expands[child.$config.expandname] = child;
-	}
-
-	/** Apply an async function to every link of this Entity */
-	static async forEachLink(entity:Entity, fn:(x:typeof Entity)=>Promise<any>) : Promise<void> {
-		const name:string = entity.constructor.name;
-		if(!Entity.#links[name]) return;
-		const links = Object.values(Entity.#links[name]);
-		for(const link of links) await fn(link);
-	}
-
-	/** Apply an async function to every expansion of this Entity */
-	static async forEachExpand(entity:Entity, fn:(x:typeof Entity)=>Promise<any>) : Promise<void> {
-		const name:string = entity.constructor.name;
-		if(!Entity.#expands[name]) return;
-		const expands = Object.values(Entity.#expands[name]);
-		for(const expand of expands) await fn(expand);
-	}
-    // #endregion
-
-    // #region Static Composite Write // ==========================================================
-	/** Create an Entity in the database, along with all dependencies and relationships. */
-	static async createComposite(db:Connection, entity:Entity, skip:SkipUUID) : Promise<void> {
-		return await db.atomic(async () => {
-			await Entity.#insertLinks(db, entity);
-            await entity.insert(db, skip)
-			await Entity.#insertExpands(db, entity);
-		});
-	}
-
-	/** Insert all of an Entity's links (parents). These are required before the Entity is inserted */
-	static async #insertLinks(db:Connection, entity:Entity) : Promise<void> {
-		return await Entity.forEachLink(entity, async lnk => {
-			const parent = (entity as any)[lnk.$config.linkname] as Entity;
-			if(!parent) return;
-			parent.insert(db);
-			(entity as any)[`uuid_${lnk.$config.linkname}`] = parent.uuid;
-		});
-	}
-
-	/** Insert this Entity's expands (children). This has to be the last insertion step */
-	static async #insertExpands(db:Connection, entity:Entity) : Promise<void> {
-		return await Entity.forEachExpand(entity, async exp => {
-			const children = (entity as any)[exp.$config.expandname] as Entity[];
-			if(!children || children.length < 1) return;
-			const link = this.$config.linkname;
-			for(const child of children){
-				(child as any)[`uuid_${link}`] = entity.uuid;
-			}
-            await this.bulkInsert(db, children);
-		});
-	}
-    // #endregion
-
-    // #region Composite Read // ==================================================================
-	/** Query and inflate Entities. This entails recursion and complexity */
-	static async inflate<C extends EClass<any>>(this: C, db:false, inflate:Inflate<C>, ...params:Primitive[]) : Promise<SelectBuilder>; // @ts-ignore
-	static async inflate<C extends EClass<any>>(this: C, db:Connection, inflate:Inflate<C>, ...params:Primitive[]) : Promise<InstanceType<C>[]>;
-	static async inflate<C extends EClass<any>>(this: C, db:Connection|false, inflate:Inflate<C>, ...params:Primitive[]) : Promise<InstanceType<C>[] | SelectBuilder> {
-		const { self, links, expands } = this.$config.inflates[inflate as string];
-
-		// load self and links' main bodies with a single query
-		const query:SelectBuilder = await (this as any)[self.exec](false, ...params, ...self.params);
-		for(const link of links){
-			query.join(await (link.type as any)[link.exec](false, ...link.params), link.reverse);
-		}
-		if(db === false) return query;
-
-        // if DB then proceed with execution
-		const results = await query.execute(db);
-		const chains = query.chains();
-		if(results.rows.length == 0) return [];
-
-		// recursively construct self and links
-		const entities:Entity[] = await Promise.all(results.rows.map(async (row:object) => {
-			const entity = new this().$ingest(row);
-			for(const link of links){
-				const childType = link.type;
-                const child = new childType().$ingest(row);
-                chains.filter((c:Chain) => c.parent == childType).map(c => {
-                    this.recursiveLink(child, row, c.child, chains);
-                });
-                // @ts-ignore spread argument must have tuple type bla bla bla, ssssh TS, this works.
-                await child.recursiveExpand(db, ...link.params);
-                (entity as any).useLink(child);
-			}
-			return entity;
-		}));
-
-		// higher order entities indexed by uuid
-		const uuids = entities.map(entity => entity.uuid);
-		const index = entities.reduce((map:{[key:string]:Entity}, entity) => {
-			map[entity.uuid as string] = entity;
-			return map;
-		}, {});
-
-		// load expands
-		for(const expand of expands){
-			if(expand.noBulk){
-				for(const entity of entities){
-					const type = expand.type;
-					const children = await (type as any)[expand.exec](db, ...expand.params, [
-						{col: `uuid_${this.$config.linkname}`, var: entity.uuid}
-					]);
-					const exp = type.$config.expandname;
-					(entity as any)[exp] = children;
-				}
-			}else{
-				const type = expand.type;
-				for(const entity of entities){
-					(entity as any)[type.$config.expandname] = [];
-				}
-				
-				const link = `uuid_${this.$config.linkname}`;
-				const children = await (type as any)[expand.exec](db, ...expand.params, [{col: link, in: uuids}]);
-				children.map((child: Record<string, UUID<NS>>) => (index as any)[child[link]].useExpand(child));
-			}
-		}
-
-		return entities as InstanceType<C>[];
-	}
-
-	/** Recursively build parent entities from joined tables in the query */
-	private static recursiveLink(entity:Entity, row:object, type:typeof Entity, chains?:Chain[]){
-		const child = new type().$ingest(row);
-        chains?.filter(c => c.parent == type).map(c => {
-            Entity.recursiveLink(child, row, c.child);
-        });
-        (entity as any).useLink(child);
-	}
-
-	/**
-	 * Recursively build child entities by querying the database again and awaiting results.
-	 * Also applies to children of linked parent entities, including self.
-	 */
-	private async recursiveExpand(db:Connection, inflate:string){
-		const map = this.$config.inflates[inflate];
-		if(map === undefined) return;
-
-		const { self, links, expands } = map;
-		const linkname = this.$config.linkname;
-		for(const expand of expands){
-			const type = expand.type;
-			const dlos = await (type as any)[expand.exec](db, ...expand.params, [
-				{col: `uuid_${linkname}`, var: this.uuid}
-			]);
-			const exp = type.$config.expandname;
-			(this as any)[exp] = dlos;
-		}
-
-		for(const link of links){
-			const child = (this as any)[link.type.$config.linkname];
-            if(child){
-				await child.recursiveExpand(db, ...link.params);
-			}
-		}
-	}
-    // #endregion
 
     // #region Static Primitive Shortcuts // ======================================================
 	/** Get one entity from this table, by UUID. */
@@ -327,21 +148,6 @@ export class Entity {
 		}
 		Entity.#booleans(this);
 		return this;
-	}
-
-    /** Use this entity as a link (instance of parent entity) */
-	private useLink(this: Entity & Record<string, Entity>, entity: Entity) {
-		this[entity.$config.linkname] = entity;
-	}
-
-	/** Use this entity as an expand (instance of child entity) */
-	private useExpand(this: Entity & Record<string, Entity[]>, entity: Entity) {
-		const field = entity.$config.expandname;
-		if(this[field]){
-            (this[field] as (Entity)[]).push(entity);
-        } else {
-            this[field] = [entity];
-        }
 	}
 
 	/** Generate a UUID for this Entity. Will fail if the field is already filled. */

@@ -10,6 +10,36 @@ const uuidmap = {
     huge: 77
 }
 
+type Migration = {
+    schema: string,
+    types: Record<string, { ts:string, sql:string }>
+    files: {
+        definitions: string
+        extraImports: string[]
+        models: string
+        modelPrefix: string
+        pathToDefinitions: string
+    }
+    models: Record<string, Spec>
+};
+
+type Spec = {
+    entity: {
+        class: string,
+        prefix: string,
+        table: string,
+        uuid: "small"|"standard"|"long"|"huge"
+    },
+    fields: Record<string, string>,
+    keys: {
+        entity: string, // other entity we are linking to
+        field_1: string, // field name for the collection on the 1 side. The table field is assumed to be uuid.
+        field_n: string // field name for the entity on the N side. The table field is assumed to be uuid_field.
+    }[],
+    generatedTS: Record<string, string>,
+    generatedSQL: Record<string, string>
+}
+
 export class Scaffolder {
     static readJSON(file: string){
         return JSON.parse(fs.readFileSync(file).toString()) as any;
@@ -18,6 +48,7 @@ export class Scaffolder {
     static async start(dir: string, file: string, pool: Pool){
         const migration : Migration = this.readJSON(path.join(dir, file));
 
+        const schema = migration.schema ?? "public";
         const types = migration.types;
         const models = migration.models;
         for(const model in models){
@@ -28,37 +59,54 @@ export class Scaffolder {
             };
         }
 
+        const keys_r = {} as Record<string, {
+            entity: string,
+            field_1: string,
+            field_n: string
+        }[]>;
+
+        for(const model in models){ // reverse keys pass
+            const spec = models[model];
+            spec.keys.forEach(v => {
+                if(!keys_r[v.entity]){
+                    keys_r[v.entity] = [];
+                }
+                keys_r[v.entity].push({
+                    entity: model,
+                    field_1: v.field_1,
+                    field_n: v.field_n
+                });
+            });
+        }
+
         for(const model in models){
             const spec = models[model];
-            if(!spec.links) spec.links = [];
-            if(!spec.expands) spec.expands = [];
 
             spec.generatedTS = {
                 K: `export type K_${model} = "${spec.entity.prefix}"`,
-                R: `export type R_${model} = Linkage<"${spec.entity.link}", "${spec.entity.expand}">`,
                 T: [
                     `export interface T_${model} {`,
                     `    uuid: UUID<K_${model}>`,
-                    ...spec.links.map(v => `    uuid_${models[v].entity.link}: UUID<K_${v}>`),
+                    ...spec.keys.map(v => `    uuid_${v.field_n}: UUID<K_${v.entity}>`),
                     ...Object.entries(spec.fields).map(([k, v]) => `    ${k}: ${types[v].ts}`),
-                    ...spec.links.map(v => `    ${models[v].entity.link}?: T_${v}`),
-                    ...spec.expands.map(v => `    ${models[v].entity.expand}?: T_${v}[]`),
+                    ...spec.keys.map(v => `    ${v.field_n}?: T_${v.entity}`),
+                    ...keys_r[model].map(v => `    ${v.field_1}?: T_${v.entity}[]`),
                     `}`
                 ].join('\n')
             }
 
             spec.generatedSQL = {
                 T: [
-                    `CREATE TABLE IF NOT EXISTS ${spec.entity.table} (`,
+                    `CREATE TABLE IF NOT EXISTS ${schema}.${spec.entity.table} (`,
                     `    uuid ${types[`UUID<${spec.entity.prefix}>`].sql} PRIMARY KEY,`,
-                    ...spec.links.map(v => `    uuid_${models[v].entity.link} ${types[`UUID<${models[v].entity.prefix}>`].sql},`),
+                    ...spec.keys.map(r => `    uuid_${r.field_n} ${types[`UUID<${models[r.entity].entity.prefix}>`].sql},`),
                     ...Object.entries(spec.fields).map(([k, v]) => `    ${k} ${types[v].sql},`)
                 ].join('\n').replace(/,$/, '\n);'),
-                C: (spec.expands.length || spec.links.length) ? spec.links.map(v => [
-                        `ALTER TABLE ${spec.entity.table}`,
-                        `ADD CONSTRAINT fk_${model}_${v}`,
-                        `FOREIGN KEY (uuid_${models[v].entity.link})`,
-                        `REFERENCES ${models[v].entity.table}(uuid);`
+                C: spec.keys.length ? spec.keys.map(r => [
+                        `ALTER TABLE ${schema}.${spec.entity.table}`,
+                        `ADD CONSTRAINT fk_${model}_${r.field_n}`,
+                        `FOREIGN KEY (uuid_${r.field_n})`,
+                        `REFERENCES ${models[r.entity].entity.table}(uuid);`
                     ].join(' ')
                 ).join('\n') : ''
             };
@@ -102,19 +150,36 @@ export class Scaffolder {
                 return `
 
 export const $config${model} = {
-    expandname: '${spec.entity.expand}',
-    linkname: '${spec.entity.link}',
     uuidsize: '${spec.entity.uuid}',
     prefix: '${spec.entity.prefix}',
     table: '${spec.entity.table}',
     fields: {
         '*': [
-            ${['\'uuid\'', ...spec.links.map(v => `'uuid_${models[v].entity.link}'`)].join(', ')},
+            ${['\'uuid\'', ...spec.keys.map(v => `'uuid_${v.field_n}'`)].join(', ')},
             ${Object.keys(spec.fields).map(k => `'${k}'`).join(', ')}
         ]
     },
     booleans: [${booleans.join(', ')}]${ booleans.length ? '' : ' as string[]' },
-    inflates: {}
+    parents: {
+        ${spec.keys.map(r => `${r.field_n}: {
+            parentClass: "${r.entity}",
+            parentField: "uuid",
+            childClass: "${model}",
+            childField: "uuid_${r.field_n}",
+            parentName: "${r.field_n}",
+            childrenName: "${r.field_1}"
+        }`).join(',\n')}
+    },
+    children: {
+        ${keys_r[model].map(r => `${r.field_1}: {
+            parentClass: "${model}",
+            parentField: "uuid",
+            childClass: "${r.entity}",
+            childField: "uuid_${r.field_n}",
+            parentName: "${r.field_n}",
+            childrenName: "${r.field_1}"
+        }`).join(',\n')}
+    }
 } satisfies EntityConfig;`
             })
         ].join('\n'));
@@ -177,32 +242,4 @@ export class ${className} extends Entity {
         }
         Logger.info("Done.");
     }
-}
-
-type Migration = {
-    types: Record<string, { ts:string, sql:string }>
-    files: {
-        definitions: string
-        extraImports: string[]
-        models: string
-        modelPrefix: string
-        pathToDefinitions: string
-    }
-    models: Record<string, Spec>
-};
-
-type Spec = {
-    entity: {
-        class: string,
-        link: string,
-        expand: string,
-        prefix: string,
-        table: string,
-        uuid: "small"|"standard"|"long"|"huge"
-    },
-    fields: Record<string, string>,
-    links: string[],
-    expands: string[],
-    generatedTS: Record<string, string>,
-    generatedSQL: Record<string, string>
 }
