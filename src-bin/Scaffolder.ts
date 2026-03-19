@@ -68,6 +68,7 @@ export class Scaffolder {
         this.writeModelConfigurationsFile();
         this.writeModelClasses();
         await this.applyDatabaseChanges();
+        Logger.info("Done.");
     }
 
     private generateUUIDTypeDefs(){
@@ -83,8 +84,10 @@ export class Scaffolder {
     }
 
     private processRelationships(){
+        Logger.info("Processing relationships");
         const models = this.migration.models;
         for(const model in models){
+            Logger.debug("- " + model);
             if(!this.keys_r[model]) this.keys_r[model] = [];
             const spec = models[model];
             const superclass = spec.entity.extends;
@@ -116,15 +119,17 @@ export class Scaffolder {
     }
 
     private generateEntityCode(){
+        Logger.info("Generating entity code")
         const schema = this.migration.schema ?? "public";
         const types = this.migration.types;
         const models = this.migration.models;
 
         for(const model in models){
+            Logger.debug("- " + model);
             const spec = models[model];
 
             spec.generatedTS = {
-                K: `export type K_${model} = "${spec.entity._subclasses ? spec.entity._subclasses.map(k => `"K_${k}"`).join('" | "'): spec.entity.prefix}"`,
+                K: `export type K_${model} = ${spec.entity._subclasses ? spec.entity._subclasses.map(k => `K_${k}`).join('" | "'): `"${spec.entity.prefix}"`}`,
                 T: [
                     `export interface T_${model}${spec.entity.extends ? ` extends T_${spec.entity.extends}` : ''} {`,
                     `    uuid: UUID<K_${model}>`,
@@ -145,14 +150,15 @@ export class Scaffolder {
                 ].join('\n').replace(/,$/, '\n);'),
                 C: spec.keys.map(r => [
                         `ALTER TABLE ${schema}.${spec.entity.table}`,
+                        `DROP CONSTRAINT IF EXISTS fk_${model}_${r.key};`,
+                        `ALTER TABLE ${schema}.${spec.entity.table}`,
                         `ADD CONSTRAINT fk_${model}_${r.key}`,
                         `FOREIGN KEY (uuid_${r.key})`,
                         `REFERENCES ${models[r.entity].entity.table}(uuid);`
                     ].join(' ')
                 ).concat(spec.entity.extends ? [[
                     `ALTER TABLE ${schema}.${spec.entity.table}`,
-                    `DROP CONSTRAINT IF EXISTS fk_${model}_extends_${spec.entity.extends}`,
-                ].join('\n'), [
+                    `DROP CONSTRAINT IF EXISTS fk_${model}_extends_${spec.entity.extends};`,
                     `ALTER TABLE ${schema}.${spec.entity.table}`,
                     `ADD CONSTRAINT fk_${model}_extends_${spec.entity.extends}`,
                     `FOREIGN KEY (uuid)`,
@@ -166,7 +172,6 @@ export class Scaffolder {
         if(!fs.existsSync(this.migration.files.definitions)){
             Logger.warn(this.migration.files.definitions + " does not exist, creating.");
             fs.mkdirSync(this.migration.files.definitions, {recursive: true});
-            Logger.info("Created.");
         }
 
         const definitionsFile = path.join(this.migration.files.definitions, 'Models.d.ts');
@@ -184,7 +189,6 @@ export class Scaffolder {
                 "\n"
             ].join('\n'))
         ].join('\n'));
-        Logger.info("Done");
     }
 
     private writeModelConfigurationsFile(){
@@ -202,7 +206,7 @@ export class Scaffolder {
 
 export const $config${model} = {
     prefix: '${spec.entity.prefix}',
-    ingest: '[${this.ingest[model].map(v => `'${v}'`).join(', ')}]',
+    ingest: [${this.ingest[model].map(v => `'${v}'`).join(', ')}],
     table: '${spec.entity.table}',
     uuidsize: '${spec.entity.uuid}',
     fields: {
@@ -235,14 +239,12 @@ export const $config${model} = {
 } satisfies EntityConfig;`
             })
         ].join('\n'));
-        Logger.info("Done");
     }
 
     private writeModelClasses(){
         if(!fs.existsSync(this.migration.files.models)){
             Logger.warn(this.migration.files.models + " does not exist, creating.");
             fs.mkdirSync(this.migration.files.models, {recursive: true});
-            Logger.info("Created.");
         }
 
         Logger.info("Writing model classes...");
@@ -255,7 +257,7 @@ export const $config${model} = {
                 Logger.warn(file + " already exists, skipping.");
                 continue;
             }
-            Logger.info("Writing " + file + " ...");
+            Logger.debug("Writing " + file);
             fs.writeFileSync(file, [
                 `import { Entity, UUID} from "@lordfokas/magic-orm";`,
                 `import { K_${model}, T_${model} } from "${modelsImport}";`,
@@ -273,7 +275,6 @@ export const $config${model} = {
                 `}`,
             ].join('\n'));
         }
-        Logger.info("Done.");
     }
 
     private async applyDatabaseChanges(){
@@ -281,10 +282,9 @@ export const $config${model} = {
         for(const model in this.migration.models){
             Logger.debug(model + " ...");
             const spec = this.migration.models[model];
-            // Logger.warn(spec.generatedSQL.T);
+            Logger.fine(spec.generatedSQL.T);
             await this.pool.query(spec.generatedSQL.T);
         }
-        Logger.info("Done.");
         Logger.info("Begin writing database constraints");
         for(const model in this.migration.models){
             const spec = this.migration.models[model];
@@ -293,9 +293,8 @@ export const $config${model} = {
                 continue;
             }
             Logger.debug(model + " ...");
-            // Logger.warn(spec.generatedSQL.C);
+            Logger.fine(spec.generatedSQL.C);
             await this.pool.query(spec.generatedSQL.C);
         }
-        Logger.info("Done.");
     }
 }
