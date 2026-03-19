@@ -15,22 +15,27 @@ export interface EntitySerializer {
 // Entity Configuration
 export interface EntityConfig {
     prefix: NS
+	ingest: NS[]
     table: string
     uuidsize: UUIDSize
     booleans?: string[]
     order?: string[]
     fields: TableFields
+	extends?: ForeignKey
 	parents: Record<string, Relationship>
 	children: Record<string, Relationship>
 }
 
 export type TableFields = { "*": string[] } & Record<string, string[]>;
 
-export interface Relationship {
+export interface ForeignKey {
 	parentClass: string
 	parentField: string
 	childClass: string
 	childField: string
+}
+
+export interface Relationship extends ForeignKey {
 	parentName: string
 	childrenName: string
 }

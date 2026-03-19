@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import fs from 'node:fs';
-import { Logger, PrettyPrinter } from '@lordfokas/loggamus';
+import { Logger, PrettyPrinter, LogLevel } from '@lordfokas/loggamus';
 import { Command } from 'commander';
 import { Scaffolder } from './Scaffolder.js';
 import pg from 'pg';
@@ -13,6 +13,14 @@ function readJSON(file: string){
 const pkg = readJSON("./package.json");
 const program = new Command("magic-orm").version(pkg.version).description("Command line tools for magic-orm");
 const printer = new PrettyPrinter();
+const levels = {
+    FINE: LogLevel.FINE,
+    DEBUG: LogLevel.DEBUG,
+    INFO: LogLevel.INFO,
+    WARN: LogLevel.WARN,
+    ERROR: LogLevel.ERROR,
+    FATAL: LogLevel.FATAL
+} as Record<string, LogLevel>;
 
 program.command("scaffold").description("Scaffold models for your application")
 .argument("<sourcedir>", "model definition source dir")
@@ -22,7 +30,21 @@ program.command("scaffold").description("Scaffold models for your application")
 .option("-U <dbuser>")
 .option("-P <dbpass>")
 .option("-N <dbname>")
+.option("-L <level>", "minimum log level", "INFO")
 .action((sourcedir: string, version: string, options) => {
+    const L = options.L.toUpperCase();
+    let level = levels[L];
+    if(!level) {
+        Logger.warn(`Log Level "${L}" not found. Using "INFO".`)
+        level = levels.INFO;
+        Logger.info("Allowed log levels: FINE, DEBUG, INFO, WARN, ERROR, FATAL\n");
+    }
+    if(level !== LogLevel.INFO) {
+        Logger.info("Using log level: " + level.name);
+    }
+    Logger.getDefault().setMinLevel(level);
+    
+
     fs.readdir(sourcedir, (err, files) => {
         if(err){
             printer.color("red").write(err).flush();

@@ -1,6 +1,6 @@
 import { type Connection } from './DB.js';
 import { Entity } from './Entity.js';
-import { Primitive, Relationship } from './Structures.js';
+import { ForeignKey, Primitive } from './Structures.js';
 
 export class QueryBuilder {
 	#conds:string[] = [];
@@ -61,7 +61,7 @@ export class SelectBuilder extends QueryBuilder {
 		return this;
 	}
 
-	join(master:SelectBuilder, relationship: Relationship){
+	join(master:SelectBuilder, relationship: ForeignKey){
 		const childCol = this.entity().COL(relationship.childField);
 		const parentCol = master.entity().COL(relationship.parentField);
 
