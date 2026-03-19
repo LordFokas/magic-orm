@@ -129,7 +129,7 @@ export class Scaffolder {
             const spec = models[model];
 
             spec.generatedTS = {
-                K: `export type K_${model} = ${spec.entity._subclasses ? spec.entity._subclasses.map(k => `K_${k}`).join('" | "'): `"${spec.entity.prefix}"`}`,
+                K: `export type K_${model} = ${spec.entity._subclasses ? spec.entity._subclasses.map(k => `K_${k}`).join(' | '): `"${spec.entity.prefix}"`}`,
                 T: [
                     `export interface T_${model}${spec.entity.extends ? ` extends T_${spec.entity.extends}` : ''} {`,
                     `    uuid: UUID<K_${model}>`,
@@ -194,51 +194,82 @@ export class Scaffolder {
     private writeModelConfigurationsFile(){
         const configFile = path.join(this.migration.files.definitions, 'ModelConfigs.ts');
         Logger.info("Writing " + configFile)
-        fs.writeFileSync(configFile, [
-            "// Auto-generated file by magic-orm bin tools",
-            "// Do not overwrite or modify manually\n",
-            'import { type EntityConfig } from "@lordfokas/magic-orm";',
-            ...Object.entries(this.migration.models).map(([model, spec]) => {
-                const booleans = Object.entries(spec.fields)
-                    .filter(([_, v]) => v == "boolean")
-                    .map(([k, _]) => `'${k}'`);
-                return `
 
-export const $config${model} = {
-    prefix: '${spec.entity.prefix}',
-    ingest: [${this.ingest[model].map(v => `'${v}'`).join(', ')}],
-    table: '${spec.entity.table}',
-    uuidsize: '${spec.entity.uuid}',
-    fields: {
-        '*': [
-            ${['\'uuid\'', ...spec.keys.map(v => `'uuid_${v.key}'`)].join(', ')},
-            ${Object.keys(spec.fields).map(k => `'${k}'`).join(', ')}
-        ]
-    },
-    booleans: [${booleans.join(', ')}]${ booleans.length ? '' : ' as string[]' },
-    parents: {
-        ${spec.keys.map(r => `${r.key}: {
-            parentClass: "${r.entity}",
-            parentField: "uuid",
-            childClass: "${model}",
-            childField: "uuid_${r.key}",
-            parentName: "${r.key}",
-            childrenName: "${r.exp}"
-        }`).join(',\n       ')}
-    },
-    children: {
-        ${this.keys_r[model].filter(r => r.exp).map(r => `${r.exp}: {
-            parentClass: "${model}",
-            parentField: "uuid",
-            childClass: "${r.entity}",
-            childField: "uuid_${r.key}",
-            parentName: "${r.key}",
-            childrenName: "${r.exp}"
-        }`).join(',\n       ')}
-    }
-} satisfies EntityConfig;`
-            })
-        ].join('\n'));
+        const lines = [
+            "// Auto-generated file by magic-orm bin tools",
+            "// Do not overwrite or modify manually",
+            "",
+            'import { type EntityConfig } from "@lordfokas/magic-orm";'
+        ];
+
+        for(const model in this.migration.models){
+            const spec = this.migration.models[model];
+            const booleans = Object.entries(spec.fields)
+                .filter(([_, v]) => v == "boolean")
+                .map(([k, _]) => `'${k}'`);
+
+            const fields = [
+                `'uuid'`,
+                ...spec.keys.map(v => `'uuid_${v.key}'`),
+                ...Object.keys(spec.fields).map(k => `'${k}'`)
+            ].join(', ');
+
+            const inherits = spec.entity.extends ? [
+                `    inherits: {`,
+                `        parentClass: "${spec.entity.extends}",`,
+                `        parentField: "uuid",`,
+                `        childClass: "${model}",`,
+                `        childField: "uuid",`,
+                `    }`
+            ] : [];
+
+            const parents = spec.keys.map(r => [
+                `        ${r.key}: {`,
+                `            parentClass: "${r.entity}",`,
+                `            parentField: "uuid",`,
+                `            childClass: "${model}",`,
+                `            childField: "uuid_${r.key}",`,
+                `            parentName: "${r.key}",`,
+                `            childrenName: "${r.exp}"`,
+                `        }`
+            ].join('\n')).join(',\n');
+
+            const children = this.keys_r[model]
+                .filter(r => r.exp && r.exp.length > 0)
+                .map(r => [
+                    `        ${r.exp}: {`,
+                    `            parentClass: "${model}",`,
+                    `            parentField: "uuid",`,
+                    `            childClass: "${r.entity}",`,
+                    `            childField: "uuid_${r.key}",`,
+                    `            parentName: "${r.key}",`,
+                    `            childrenName: "${r.exp}"`,
+                    `        }`
+                ].join('\n')).join(',\n');
+
+            lines.push(
+                "",
+                `export const $config${model} = {`,
+                `    prefix: '${spec.entity.prefix}',`,
+                `    ingest: [${this.ingest[model].map(v => `'${v}'`).join(', ')}],`,
+                `    table: '${spec.entity.table}',`,
+                `    uuidsize: '${spec.entity.uuid}',`,
+                `    fields: {`,
+                `        '*': [ ${fields} ]`,
+                `    },`,
+                `    booleans: [${booleans.join(', ')}]${ booleans.length ? '' : ' as string[]' },`,
+                ...inherits,
+                `    parents: {`,
+                parents,
+                `    },`,
+                `    children: {`,
+                children,
+                `    }`,
+                `} satisfies EntityConfig;`
+            );
+        }
+
+        fs.writeFileSync(configFile, lines.join('\n'));
     }
 
     private writeModelClasses(){

@@ -21,7 +21,7 @@ export interface EntityConfig {
     booleans?: string[]
     order?: string[]
     fields: TableFields
-	extends?: ForeignKey
+	inherits?: ForeignKey
 	parents: Record<string, Relationship>
 	children: Record<string, Relationship>
 }
