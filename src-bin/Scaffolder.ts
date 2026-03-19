@@ -136,7 +136,7 @@ export class Scaffolder {
                     ...spec.keys.map(v => `    uuid_${v.key}: UUID<K_${v.entity}>`),
                     ...Object.entries(spec.fields).map(([k, v]) => `    ${k}: ${types[v].ts}`),
                     ...spec.keys.map(v => `    ${v.key}?: T_${v.entity}`),
-                    ...this.keys_r[model].map(v => `    ${v.exp}?: T_${v.entity}[]`),
+                    ...this.keys_r[model].filter(r => r.exp && r.exp.length > 0).map(v => `    ${v.exp}?: T_${v.entity}[]`),
                     `}`
                 ].join('\n')
             }
@@ -220,7 +220,7 @@ export class Scaffolder {
                 `        parentField: "uuid",`,
                 `        childClass: "${model}",`,
                 `        childField: "uuid",`,
-                `    }`
+                `    },`
             ] : [];
 
             const parents = spec.keys.map(r => [
