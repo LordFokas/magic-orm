@@ -26,10 +26,10 @@ export class QueryBuilder {
 	filter(filters:Filter[], entity:typeof Entity) : this {
 		(filters as FilterAny[]).map(f => {
 			if(Array.isArray(f.in)){
-				this.where(entity.COL(f.col)+' IN ( '+f.in.map(_=>'?').join(', ')+' )');
+				this.where(entity.COL([f.col])+' IN ( '+f.in.map(_=>'?').join(', ')+' )');
 				this.param(...f.in);
 			}else{
-				this.where(entity.COL(f.col)+' '+(f.op||'=')+' '+(f.val||'?'));
+				this.where(entity.COL([f.col])+' '+(f.op||'=')+' '+(f.val||'?'));
 				if(f.var !== undefined) this.param(f.var);
 			}
 		});
@@ -62,8 +62,8 @@ export class SelectBuilder extends QueryBuilder {
 	}
 
 	join(master:SelectBuilder, relationship: ForeignKey){
-		const childCol = this.entity().COL(relationship.childField);
-		const parentCol = master.entity().COL(relationship.parentField);
+		const childCol = this.entity().COL([relationship.childField]);
+		const parentCol = master.entity().COL([relationship.parentField]);
 
 		this.fields().push(...master.fields());
 		this.#joins.push(`JOIN ${master.table()} ON ${childCol} = ${parentCol}`);

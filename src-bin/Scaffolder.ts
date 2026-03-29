@@ -45,7 +45,6 @@ export class Scaffolder {
     private migration: Migration;
     private pool: Pool;
     private keys_r: Record<string, { entity: string, exp: string, key: string }[]> = {};
-    private ingest: Record<string, string[]> = {};
 
     static readJSON(file: string){
         return JSON.parse(fs.readFileSync(file).toString()) as any;
@@ -104,18 +103,7 @@ export class Scaffolder {
                     exp: v.exp
                 });
             });
-            this.processIngest(model);
         }
-    }
-
-    private processIngest(model: string){
-        if(!this.ingest[model]){
-            const spec = this.migration.models[model];
-            this.ingest[model] = [spec.entity.prefix];
-            const superclass = spec.entity.extends;
-            if(superclass) this.ingest[model].push(...this.processIngest(superclass));
-        }
-        return this.ingest[model];
     }
 
     private generateEntityCode(){
@@ -189,6 +177,18 @@ export class Scaffolder {
                 "\n"
             ].join('\n'))
         ].join('\n'));
+
+        const manifestFile = path.join(this.migration.files.definitions, 'models.json');
+        Logger.info("Writing " + manifestFile)
+        fs.writeFileSync(manifestFile, JSON.stringify(Object.keys(this.migration.models), null, 4));
+    }
+
+    private getBooleans(spec: Spec) {
+        const booleans = Object.entries(spec.fields).filter(([_, v]) => v == "boolean");
+        if(!spec.entity.extends) return booleans;
+
+        const parent = this.getBooleans(this.migration.models[spec.entity.extends]) as string[];
+        return [...booleans, ...parent];
     }
 
     private writeModelConfigurationsFile(){
@@ -204,9 +204,7 @@ export class Scaffolder {
 
         for(const model in this.migration.models){
             const spec = this.migration.models[model];
-            const booleans = Object.entries(spec.fields)
-                .filter(([_, v]) => v == "boolean")
-                .map(([k, _]) => `'${k}'`);
+            const booleans = this.getBooleans(spec);
 
             const fields = [
                 `'uuid'`,
@@ -251,13 +249,12 @@ export class Scaffolder {
                 "",
                 `export const $config${model} = {`,
                 `    prefix: '${spec.entity.prefix}',`,
-                `    ingest: [${this.ingest[model].map(v => `'${v}'`).join(', ')}],`,
                 `    table: '${spec.entity.table}',`,
                 `    uuidsize: '${spec.entity.uuid}',`,
                 `    fields: {`,
                 `        '*': [ ${fields} ]`,
                 `    },`,
-                `    booleans: [${booleans.join(', ')}]${ booleans.length ? '' : ' as string[]' },`,
+                `    booleans: [${booleans.map(([k, _]) => `'${k}'`).join(', ')}]${ booleans.length ? '' : ' as string[]' },`,
                 ...inherits,
                 `    parents: {`,
                 parents,

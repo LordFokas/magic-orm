@@ -99,18 +99,43 @@ export class Entity {
 	static async read<C extends EClass<any>>(this:C, db:Connection, select?:FieldSet<C>, filters?:Filter[]) : Promise<InstanceType<C>[]>;
 	static async read<C extends EClass<any>>(this:C, db:Connection|false, select:FieldSet<C> = '*', filters:Filter[] = []) : Promise<InstanceType<C>[] | SelectBuilder>{
 		const query = this.select(select, filters);
+
+		// Join table we inherit from
+		const inherits = this.$config.inherits;
+		if(inherits) {
+			const parent = Serializer.lookup(inherits.parentClass) as EClass<any>;
+			query.join(await parent.inherit(this.$config.prefix, select as any), inherits);
+		}
+
 		if(db === false) return query;
 		const result = await query.execute(db);
 		return result.rows.map((row:object) => new this().$ingest(row));
+	}
+
+	/** Create queries for table inheritance. */
+	static async inherit<C extends EClass<any>>(this:C, prefix:string, select?:FieldSet<C>) : Promise<SelectBuilder>{
+		let fields = this.$config.fields[select] as string[];
+		if(!fields) throw new Error(`No such field set: ${select}`);
+		fields = fields.filter(f => f != 'uuid');
+		const query = new SelectBuilder(this, this.ALIAS(fields, this.$config.prefix, prefix));
+	
+		// Join table we inherit from
+		const inherits = this.$config.inherits;
+		if(inherits) {
+			const parent = Serializer.lookup(inherits.parentClass) as EClass<any>;
+			query.join(await parent.inherit(this.$config.prefix, select as any), inherits);
+		}
+
+		return query;
 	}
 
 	/** Get a SelectBuilder for a set of columns and filters */
 	static select<C extends EClass<any>>(this:C, select:FieldSet<C> = '*', filters:Filter[] = []) : SelectBuilder {
 		const fields = this.$config.fields[select];
 		if(!fields) throw new Error(`No such field set: ${select}`);
-		const query = new SelectBuilder(this, this.ALIAS(...fields)).filter(filters, this);
+		const query = new SelectBuilder(this, this.ALIAS(fields)).filter(filters, this);
 		const order = this.$config.order;
-		if(order) query.order(this.COL(...order));
+		if(order) query.order(this.COL(order));
 		return query;
 	}
 
@@ -139,8 +164,8 @@ export class Entity {
 	 * Any matching fields are injected into the object.
 	 * This is done by expecting fields to be prefixed with the table's 2-letter code.
 	 */
-	private $ingest(row:object){
-		const prefix = this.$config.prefix + '_';
+	private $ingest(row:object, prefix:string = this.$config.prefix){
+		prefix = prefix + '_';
 		for(const [k, v] of Object.entries(row)){
 			if(k.startsWith(prefix)){
 				(this as Record<string, any>)[k.substring(3)] = v;
@@ -211,20 +236,18 @@ export class Entity {
 	 * Creates a list of fields for a SELECT query, aliased as XX_col_name
 	 * where XX is this table's 2-letter code.
 	 */
-	static ALIAS(...columns:string[]) : string {
-		const p = this.$config.prefix;
-		return columns.map(c => `${p}.${c} AS "${p}_${c}"`).join(', ');
+	static ALIAS(columns:string[], p_tbl:string = this.$config.prefix, p_col:string = p_tbl) : string {
+		return columns.map(c => `${p_tbl}.${c} AS "${p_col}_${c}"`).join(', ');
 	}
 
 	/** Creates a list of fields for a SELECT query */
-	static COL(...columns:string[]) : string {
-		const p = this.$config.prefix;
-		return columns.map(c => `${p}.${c}`).join(', ');
+	static COL(columns:string[], prefix:string = this.$config.prefix) : string {
+		return columns.map(c => `${prefix}.${c}`).join(', ');
 	}
 
 	/** Returns this table aliased with its 2-letter code for use in queries. */
-	static TABLE() : string {
-		return `${this.$config.table} ${this.$config.prefix}`;
+	static TABLE(prefix:string = this.$config.prefix) : string {
+		return `${this.$config.table} ${prefix}`;
 	}
 
 	/** Generate a zero-filled UUID with an appropriate size for this table's PK. */

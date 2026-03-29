@@ -15,7 +15,6 @@ export interface EntitySerializer {
 // Entity Configuration
 export interface EntityConfig {
     prefix: NS
-	ingest: NS[]
     table: string
     uuidsize: UUIDSize
     booleans?: string[]
