@@ -113,7 +113,7 @@ export class Entity {
 	}
 
 	/** Create queries for table inheritance. */
-	static async inherit<C extends EClass<any>>(this:C, prefix:string, select?:FieldSet<C>) : Promise<SelectBuilder>{
+	private static async inherit<C extends EClass<any>>(this:C, prefix:string, select?:FieldSet<C>) : Promise<SelectBuilder>{
 		let fields = this.$config.fields[select] as string[];
 		if(!fields) throw new Error(`No such field set: ${select}`);
 		fields = fields.filter(f => f != 'uuid');
@@ -137,6 +137,12 @@ export class Entity {
 		const order = this.$config.order;
 		if(order) query.order(this.COL(order));
 		return query;
+	}
+
+	protected static $of<C extends EClass<any>>(this:C, row:object, fn?:(dlo:InstanceType<C>, row:object) => void) : InstanceType<C> {
+		const dlo = new this().$ingest(row);
+		if(fn) fn(dlo, row);
+		return dlo;
 	}
 
 	/** Convert boolean fields from string '0' and '1' to primitive false and true. */
@@ -164,7 +170,7 @@ export class Entity {
 	 * Any matching fields are injected into the object.
 	 * This is done by expecting fields to be prefixed with the table's 2-letter code.
 	 */
-	private $ingest(row:object, prefix:string = this.$config.prefix){
+	protected $ingest(row:object, prefix:string = this.$config.prefix){
 		prefix = prefix + '_';
 		for(const [k, v] of Object.entries(row)){
 			if(k.startsWith(prefix)){
