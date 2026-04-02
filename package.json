@@ -1,7 +1,7 @@
 {
   "name": "@lordfokas/magic-orm",
   "type": "module",
-  "version": "4.0.2-d",
+  "version": "4.0.2-e",
   "author": "LordFokas",
   "license": "MIT",
   "description": "A class-based ORM in TypeScript. Unorthodox and extremely opinionated, made to fit my specific use cases.",
