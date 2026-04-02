@@ -6,7 +6,6 @@ import { Logger, LogLevel, PrettyPrinter, Pipe, type Color, type Options } from 
 
 
 const DBCONN  = new LogLevel("DBCONN" , 35);
-const DBLOCK  = new LogLevel("DBLOCK" , 28);
 const DBQUERY = new LogLevel("DBQUERY", 22);
 
 let $logger:Logger;
@@ -19,7 +18,6 @@ export function useLogger(logger:Logger, options?:Options) : void {
 		tracedepth: 5,
 		styles: {
 			'DBCONN'  : { color: 'yellow', mods: ['underline'] },
-			'DBLOCK'  : { color: 'red'   , mods: []            },
 			'DBQUERY' : { color: 'white' , mods: ['bright']    }
 		}
 	})
@@ -42,6 +40,15 @@ type PGClient = Client & PoolClient;
 
 /** The database connection manager */
 export class DB {
+	static #readOnly:boolean = false;
+
+	static isReadOnly() : boolean {
+		return this.#readOnly;
+	}
+
+	static setReadOnly(value:boolean) : void {
+		this.#readOnly = value;
+	}
 
 	/** Initiate the connection pool to the database server. Necessary before acquiring any connections. */
 	static init(config:Pool.Config<Client>) : void {
@@ -56,6 +63,20 @@ export class DB {
 		return new Connection(conn);
 	};
 }
+
+const symbols = {
+	SELECT: '>>',
+	INSERT: '++',
+	UPDATE: '**',
+	DELETE: '--'
+} as Record<string, string>;
+
+const colors = {
+	SELECT: 'cyan',
+	INSERT: 'green',
+	UPDATE: 'yellow',
+	DELETE: 'red'
+} as Record<string, Color>;
 
 /** A database connection to execute queries on. */
 export class Connection {
@@ -73,18 +94,28 @@ export class Connection {
 	 * @returns query results
 	 */
 	async execute(sql:string|string[], values:any[] = []) : Promise<QueryArrayResult> {
+		// Collapse query into single string.
 		if(Array.isArray(sql)) sql = sql.join('\n');
+
+		const spaceIndex = sql.indexOf(' ');
+        const type = spaceIndex === -1 ? sql : sql.substring(0, spaceIndex);
+		if(DB.isReadOnly() && type !== 'SELECT') throw new Error("Database is in Read-Only mode.");
+
 		DBUtil.validate(sql, values, this.#containers);
 		sql = DBUtil.pgps(sql); // convert ? to $x
 		const start:number = Date.now();
 		const result:QueryArrayResult = await this.#query(sql, DBUtil.patch(values));
 		const elapsed:number = Date.now() - start;
+
 		if(this.#containers > 0) {
-			pretty.reset().color("red").write("║ ".repeat(this.#containers)).reset().style('bright');
+			pretty.style('reset').color('red').write("║ ").style('bright');
+			if(this.#containers > 1) pretty.color('black').write("║ ".repeat(this.#containers - 1));
+			pretty.reset().style('bright').color(colors[type]);
 		}
-		if(result.rowCount) pretty.write(`>> ${result.rowCount} rows `);
-		else pretty.color('black').write(`>> zero rows `);
+		if(result.rowCount) pretty.write(`${symbols[type]} ${result.rowCount} rows `);
+		else pretty.color('black').write(`${symbols[type]} 0 rows `);
 		pretty.color('black').write('in ', elapsed, ' ms').flush(0);
+		
 		return result;
 	}
 
@@ -95,7 +126,7 @@ export class Connection {
 	 * @deprecated
 	 */
 	DANGEROUSLY(sql:string) : Promise<QueryArrayResult> {
-		$logger.log(sql, DBLOCK);
+		pretty.reset().color('red').write(sql).flush(0);
 		return this.#query(sql);
 	}
 
@@ -103,10 +134,10 @@ export class Connection {
 	 * Runs an async function inside a new transaction.
 	 * Automatically commits at the end, and rollbacks on error.
 	 */
-	async atomic <T>(fn: () => Promise<T>) : Promise<T> {
+	async atomic <T>(fn: () => Promise<T>, operation: string) : Promise<T> {
 		let success = false;
 		try {
-			await this.#open("BEGIN TRANSACTION");
+			await this.#open("BEGIN TRANSACTION", operation);
 			const result = await fn();
 			await this.#close("COMMIT");
 			success = true;
@@ -129,17 +160,32 @@ export class Connection {
 	}
 
 	/** Opens a new query containment level (table lock, transaction, etc) */
-	#open = function open(sql: string) : Promise<void> {
-		$logger.log("║ ".repeat(this.#containers) + "╔═"+sql, DBLOCK);
+	#open = function open(sql: string, operation: string) : Promise<void> {
+		pretty.reset();
+		if(this.#containers > 0) {
+			pretty.color('red').write("║ ");
+			pretty.color('black').style('bright').write("║ ".repeat(this.#containers) + "╔═"+sql);
+		}else{
+			pretty.color('red').write("╔═"+sql);
+		}
+		pretty.color('yellow').style('bright').write(' ', operation).flush();
 		this.#containers++;
-		return this.#query(sql);
+		if(this.#containers === 1) this.#query(sql);
+		return;
 	}
 
 	/** Closes top query containment level (table lock, transaction, etc) */
 	#close = function close(sql: string) : Promise<void> {
+		pretty.reset();
+		if(this.#containers > 1) {
+			pretty.color('red').write("║ ");
+			pretty.color('black').style('bright').write("║ ".repeat(this.#containers - 1) + "╔═"+sql);
+		}else{
+			pretty.color('red').write("╚═"+sql);
+		}
 		this.#containers--;
-		$logger.log("║ ".repeat(this.#containers) + "╚═"+sql, DBLOCK);
-		return this.#query(sql);
+		if(this.#containers === 0) this.#query(sql);
+		return;
 	}
 
 	#query = function query (sql:string, values?:any[]) : Promise<any> {
@@ -218,9 +264,9 @@ class DBUtil {
 		const strc:Color = 'green';
 		const prmc:Color = 'yellow';
 
-		const depth = "║ ".repeat(containers);
 		if(containers > 0) {
-			pretty.style('reset').color(cont).write(depth).style('bright');
+			pretty.style('reset').color(cont).write("║ ").style('bright');
+			if(containers > 1) pretty.color('black').write("║ ".repeat(containers - 1));
 		}
 		while(query.length > 0){
 			const str = query.shift();
@@ -228,7 +274,8 @@ class DBUtil {
 				const lines = str.split("\n");
 				pretty.color(sqlc).write(lines.shift());
 				for(const line of lines) {
-					pretty.style('reset').color(cont).write('\n', depth).style('bright');
+					pretty.style('reset').color(cont).write("║ ").style('bright');
+					if(containers > 1) pretty.color('black').write("║ ".repeat(containers - 1));
 					pretty.color(sqlc).write(line);
 				}
 			} else {

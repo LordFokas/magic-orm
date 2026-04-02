@@ -68,7 +68,13 @@ export class Entity {
 	static async create<C extends EClass<any>>(this:C, db:Connection, ...entities:InstanceType<C>[]) : Promise<any> {
 		if(this.isSubtype()){
 			// Puts the full call chain into a transaction so that if anything fails no insert is committed.
-			return await db.atomic(async () => await this.create_chain(db, ...entities));
+			const prefixes = [this.$config.prefix];
+			let model = this as EClass<C>;
+			while(model.isSubtype()){
+				model = model.getSupertype();
+				prefixes.push(model.$config.prefix);
+			};
+			return await db.atomic(async () => await this.create_chain(db, ...entities), `MULTI-INSERT ${prefixes.reverse().join(" -> ")}`);
 		} else {
 			return await this.create_chain(db, ...entities);
 		}
@@ -113,11 +119,19 @@ export class Entity {
 	static async read<C extends EClass<any>>(this:C, db:false, select?:FieldSet<C>, filters?:Filter[]) : Promise<SelectBuilder>;
 	static async read<C extends EClass<any>>(this:C, db:Connection, select?:FieldSet<C>, filters?:Filter[]) : Promise<InstanceType<C>[]>;
 	static async read<C extends EClass<any>>(this:C, db:Connection|false, select:FieldSet<C> = '*', filters:Filter[] = []) : Promise<InstanceType<C>[] | SelectBuilder>{
-		const query = this.select(select, filters);
+		const own = this.$config.fields["*"];
+		const local = filters.filter(f => own.includes(f.col));
+		filters = filters.filter(f => !local.includes(f));
+		
+		if(!this.isSubtype() && filters.length > 0){
+			throw new Error(`Column(s) ${filters.map(f => "'"+f.col+"'").join(', ')} not found in table ${this.$config.table}`);
+		}
+
+		const query = this.select(select, local);
 
 		// Join table we inherit from
 		if(this.isSubtype()) {
-			query.join(await this.getSupertype().inherit(this.$config.prefix, select as any), this.$config.inherits);
+			query.join(await this.getSupertype().inherit(this.$config.prefix, select as any, filters), this.$config.inherits);
 		}
 
 		if(db === false) return query;
@@ -126,15 +140,23 @@ export class Entity {
 	}
 
 	/** Create queries for table inheritance. */
-	private static async inherit<C extends EClass<any>>(this:C, prefix:string, select?:FieldSet<C>) : Promise<SelectBuilder>{
+	private static async inherit<C extends EClass<any>>(this:C, prefix:string, select?:FieldSet<C>, filters?:Filter[]) : Promise<SelectBuilder>{
+		const own = this.$config.fields["*"];
+		const local = filters.filter(f => own.includes(f.col));
+		filters = filters.filter(f => !local.includes(f));
+		
+		if(!this.isSubtype() && filters.length > 0){
+			throw new Error(`Column(s) ${filters.map(f => "'"+f.col+"'").join(', ')} not found in table ${this.$config.table}`);
+		}
+
 		let fields = this.$config.fields[select] as string[];
 		if(!fields) throw new Error(`No such field set: ${select}`);
 		fields = fields.filter(f => f != 'uuid');
-		const query = new SelectBuilder(this, this.ALIAS(fields, this.$config.prefix, prefix));
+		const query = new SelectBuilder(this, this.ALIAS(fields, this.$config.prefix, prefix)).filter(local, this);
 	
 		// Join table we inherit from
 		if(this.isSubtype()) {
-			query.join(await this.getSupertype().inherit(this.$config.prefix, select as any), this.$config.inherits);
+			query.join(await this.getSupertype().inherit(this.$config.prefix, select as any, filters), this.$config.inherits);
 		}
 
 		return query;
