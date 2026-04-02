@@ -5,7 +5,7 @@ import { Logger } from '@lordfokas/loggamus';
 
 import { type Connection } from './DB.js';
 import { SelectBuilder, UpdateBuilder, type Filter } from './QueryBuilder.js';
-import { Class, NS, UUID, SkipUUID, NamespacedUUID, EntityConfig, Primitive, TableFields } from './Structures.js';
+import { Class, NS, UUID, SkipUUID, NamespacedUUID, EntityConfig, Primitive, TableFields, ForeignKey } from './Structures.js';
 import { Serializer } from './Serializer.js';
 
 let $logger:Logger = Logger.getDefault();
@@ -66,7 +66,22 @@ export class Entity {
 
 	/** Create one or more Entities in the database. If many, a bulk query is written. */
 	static async create<C extends EClass<any>>(this:C, db:Connection, ...entities:InstanceType<C>[]) : Promise<any> {
-		const cols = entities[0].prioritizeUUIDs();
+		if(this.isSubtype()){
+			// Puts the full call chain into a transaction so that if anything fails no insert is committed.
+			return await db.atomic(async () => await this.create_chain(db, ...entities));
+		} else {
+			return await this.create_chain(db, ...entities);
+		}
+	}
+
+	/** Actually create the entities respecting the inheritance chain. */
+	private static async create_chain<C extends EClass<any>>(this:C, db:Connection, ...entities:InstanceType<C>[]) : Promise<any> {
+		if(this.isSubtype()){
+			await this.getSupertype().create_chain(db, ...entities);
+		}
+
+		const whitelist = this.$config.fields['*'];
+		const cols = (entities[0] as Entity).prioritizeUUIDs().filter(c => whitelist.includes(c));
 		const vals = [] as any[];
 		const sql = [ "INSERT INTO "+ this.$config.table +" ( "+cols.join(', ')+" )" ];
 		if(entities.length == 1){
@@ -101,10 +116,8 @@ export class Entity {
 		const query = this.select(select, filters);
 
 		// Join table we inherit from
-		const inherits = this.$config.inherits;
-		if(inherits) {
-			const parent = Serializer.lookup(inherits.parentClass) as EClass<any>;
-			query.join(await parent.inherit(this.$config.prefix, select as any), inherits);
+		if(this.isSubtype()) {
+			query.join(await this.getSupertype().inherit(this.$config.prefix, select as any), this.$config.inherits);
 		}
 
 		if(db === false) return query;
@@ -120,10 +133,8 @@ export class Entity {
 		const query = new SelectBuilder(this, this.ALIAS(fields, this.$config.prefix, prefix));
 	
 		// Join table we inherit from
-		const inherits = this.$config.inherits;
-		if(inherits) {
-			const parent = Serializer.lookup(inherits.parentClass) as EClass<any>;
-			query.join(await parent.inherit(this.$config.prefix, select as any), inherits);
+		if(this.isSubtype()) {
+			query.join(await this.getSupertype().inherit(this.$config.prefix, select as any), this.$config.inherits);
 		}
 
 		return query;
@@ -143,6 +154,14 @@ export class Entity {
 		const dlo = new this().$ingest(row);
 		if(fn) fn(dlo, row);
 		return dlo;
+	}
+
+	static isSubtype() {
+		return typeof this.$config.inherits === "object";
+	}
+
+	static getSupertype() {
+		return Serializer.lookup(this.$config.inherits.parentClass) as EClass<any>;
 	}
 
 	/** Convert boolean fields from string '0' and '1' to primitive false and true. */
