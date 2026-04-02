@@ -168,7 +168,7 @@ export class Connection {
 		}else{
 			pretty.color('red').write("╔═"+sql);
 		}
-		pretty.color('yellow').style('bright').write(' ', operation).flush();
+		pretty.color('yellow').style('bright').write(' ', operation).flush(0);
 		this.#containers++;
 		if(this.#containers === 1) return this.#query(sql);
 		return;
@@ -183,7 +183,7 @@ export class Connection {
 		}else{
 			pretty.color('red').write("╚═"+sql);
 		}
-		pretty.flush();
+		pretty.flush(0);
 		this.#containers--;
 		if(this.#containers === 0) return this.#query(sql);
 		return;
@@ -277,7 +277,7 @@ class DBUtil {
 				for(const line of lines) {
 					pretty.style('reset').endl().color(cont).write("║ ").style('bright');
 					if(containers > 1) pretty.color('black').write("║ ".repeat(containers - 1));
-					pretty.color(sqlc).write(line).endl();
+					pretty.color(sqlc).write(line);
 				}
 			} else {
 				pretty.color(sqlc).write(str);
