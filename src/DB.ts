@@ -164,7 +164,7 @@ export class Connection {
 		pretty.reset();
 		if(this.#containers > 0) {
 			pretty.color('red').write("║ ");
-			pretty.color('black').style('bright').write("║ ".repeat(this.#containers) + "╔═"+sql);
+			pretty.color('black').style('bright').write("║ ".repeat(this.#containers - 1) + "╔═"+sql);
 		}else{
 			pretty.color('red').write("╔═"+sql);
 		}
@@ -179,7 +179,7 @@ export class Connection {
 		pretty.reset();
 		if(this.#containers > 1) {
 			pretty.color('red').write("║ ");
-			pretty.color('black').style('bright').write("║ ".repeat(this.#containers - 1) + "╚═"+sql);
+			pretty.color('black').style('bright').write("║ ".repeat(this.#containers - 2) + "╚═"+sql);
 		}else{
 			pretty.color('red').write("╚═"+sql);
 		}
@@ -189,7 +189,7 @@ export class Connection {
 		return;
 	}
 
-	#query = function query (sql:string, values?:any[]) : Promise<any> {
+	#query = function query(sql:string, values?:any[]) : Promise<any> {
 		if(this.#conn){
 			return this.#conn.query(sql, values);
 		}else{
@@ -275,9 +275,9 @@ class DBUtil {
 				const lines = str.split("\n");
 				pretty.color(sqlc).write(lines.shift());
 				for(const line of lines) {
-					pretty.style('reset').color(cont).write("║ ").style('bright');
+					pretty.style('reset').endl().color(cont).write("║ ").style('bright');
 					if(containers > 1) pretty.color('black').write("║ ".repeat(containers - 1));
-					pretty.color(sqlc).write(line);
+					pretty.color(sqlc).write(line).endl();
 				}
 			} else {
 				pretty.color(sqlc).write(str);
