@@ -115,7 +115,7 @@ export class Connection {
 		if(result.rowCount) pretty.write(`${symbols[type]} ${result.rowCount} rows `);
 		else pretty.color('black').write(`${symbols[type]} 0 rows `);
 		pretty.color('black').write('in ', elapsed, ' ms').flush(0);
-		
+
 		return result;
 	}
 
@@ -170,7 +170,7 @@ export class Connection {
 		}
 		pretty.color('yellow').style('bright').write(' ', operation).flush();
 		this.#containers++;
-		if(this.#containers === 1) this.#query(sql);
+		if(this.#containers === 1) return this.#query(sql);
 		return;
 	}
 
@@ -179,12 +179,13 @@ export class Connection {
 		pretty.reset();
 		if(this.#containers > 1) {
 			pretty.color('red').write("║ ");
-			pretty.color('black').style('bright').write("║ ".repeat(this.#containers - 1) + "╔═"+sql);
+			pretty.color('black').style('bright').write("║ ".repeat(this.#containers - 1) + "╚═"+sql);
 		}else{
 			pretty.color('red').write("╚═"+sql);
 		}
+		pretty.flush();
 		this.#containers--;
-		if(this.#containers === 0) this.#query(sql);
+		if(this.#containers === 0) return this.#query(sql);
 		return;
 	}
 
