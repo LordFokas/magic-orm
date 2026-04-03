@@ -115,7 +115,7 @@ export class Entity {
 			let model:EClass<any> = this;
 			let data = entity;
 			do { // @ts-ignore FIXME: this is a fucky-wucky. How to solve?
-				const fields = model.getFields(data, update).filter(f => f != 'uuid');
+				const fields = model.getFields(data, update, true).filter(f => f != 'uuid');
 				if(fields.length > 0) {
 					models.push({
 						model: model,
