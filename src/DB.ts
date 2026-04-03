@@ -110,8 +110,9 @@ export class Connection {
 		if(this.#containers > 0) {
 			pretty.style('reset').color('red').write("║ ").style('bright');
 			if(this.#containers > 1) pretty.color('black').write("║ ".repeat(this.#containers - 1));
-			pretty.reset().style('bright').color(colors[type]);
+			pretty.reset().style('bright');
 		}
+		pretty.color(colors[type]);
 		if(result.rowCount) pretty.write(`${symbols[type]} ${result.rowCount} rows `);
 		else pretty.color('black').write(`${symbols[type]} 0 rows `);
 		pretty.color('black').write('in ', elapsed, ' ms').flush(0);
@@ -262,7 +263,7 @@ class DBUtil {
 		pretty.style('reset','bright');
 		const cont:Color = 'red';
 		const sqlc:Color = 'blue';
-		const strc:Color = 'green';
+		const strc:Color = 'white';
 		const prmc:Color = 'yellow';
 
 		if(containers > 0) {

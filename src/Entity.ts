@@ -231,8 +231,9 @@ export class Entity {
 		return Serializer.lookup(this.$config.inherits.parentClass) as EClass<any>;
 	}
 
-	static getFields<C extends EClass<any>>(this:C, entity:InstanceType<C>, fields:FieldSet<C> = '*'){
+	static getFields<C extends EClass<any>>(this:C, entity:InstanceType<C>, fields:FieldSet<C> = '*', allowNull:boolean = false){
 		const all = this.$config.fields[fields];
+		if(all === undefined && allowNull) return [];
 		return Object.keys(entity).filter(f => all.includes(f));
 	}
 
@@ -314,7 +315,7 @@ export class Entity {
 	 * Update this Entity's DB record. Optionally specify a stricter list of fields to update.
 	 * Will fail if a UUID isn't present.
 	 */
-	async update(db:Connection, fields:string = '*') : Promise<any> {
+	async update<C extends Entity>(this:C, db:Connection, fields:FieldSet<EClass<C>> = '*') : Promise<any> {
 		if(!this.uuid) throw new Error('Update failed: Entity doesn\'t contain a UUID');
 
 		return await (this.constructor as typeof Entity)
@@ -322,7 +323,7 @@ export class Entity {
 	}
 
 	/** Upserts (update or insert) this Entity, depending on wether or not this object has a UUID. */
-	async upsert(db:Connection, fields = '*') : Promise<any> {
+	async upsert<C extends Entity>(this:C, db:Connection, fields:FieldSet<EClass<C>> = '*') : Promise<any> {
 		if(this.uuid) return await this.update(db, fields);
 		else return await this.insert(db);
 	}
