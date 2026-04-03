@@ -230,7 +230,8 @@ export class Scaffolder {
                 `            parentName: "${r.key}",`,
                 `            childrenName: "${r.exp}"`,
                 `        }`
-            ].join('\n')).join(',\n');
+            ].join('\n'))
+            .join(',\n');
 
             const children = this.keys_r[model]
                 .filter(r => r.exp && r.exp.length > 0)
@@ -243,7 +244,8 @@ export class Scaffolder {
                     `            parentName: "${r.key}",`,
                     `            childrenName: "${r.exp}"`,
                     `        }`
-                ].join('\n')).join(',\n');
+                ].join('\n'))
+                .join(',\n');
 
             lines.push(
                 "",
@@ -252,7 +254,8 @@ export class Scaffolder {
                 `    table: '${spec.entity.table}',`,
                 `    uuidsize: '${spec.entity.uuid}',`,
                 `    fields: {`,
-                `        '*': [ ${fields} ]`,
+                `        '*': [ ${fields} ],`,
+                `        'uuid': [ 'uuid' ]`,
                 `    },`,
                 `    booleans: [${booleans.map(([k, _]) => `'${k}'`).join(', ')}]${ booleans.length ? '' : ' as string[]' },`,
                 ...inherits,

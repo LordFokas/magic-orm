@@ -106,11 +106,56 @@ export class Entity {
 
 	/** Update one or more database rows with the data contained in this Entity */
 	static async update<C extends EClass<any>>(this:C, db:Connection, entity:InstanceType<C>, update:FieldSet<C> = '*', filters:Filter[] = []) : Promise<any> {
-		const superset = this.$config.fields[update];
-		if(!superset) throw new Error(`No such field set: ${update}`);
 		if(filters.length < 1) throw new Error('Cannot update table with no filters');
-		const existing = Object.keys(entity);
-		const fields = superset.filter(f => f != 'uuid' && existing.includes(f));
+		
+		// handle polymorphic updates
+		if(this.isSubtype()){
+			// determine tables to update
+			let models = [] as { model:EClass<any>, data:any, fields:string[] }[];
+			let model:EClass<any> = this;
+			let data = entity;
+			do { // @ts-ignore FIXME: this is a fucky-wucky. How to solve?
+				const fields = model.getFields(data, update).filter(f => f != 'uuid');
+				if(fields.length > 0) {
+					models.push({
+						model: model,
+						data: data,
+						fields: fields
+					});
+				}
+				if(model.isSubtype()){ 
+					model = model.getSupertype();
+					data = new model(data);
+				}
+				else break;
+			} while(true);
+			
+			// determine update strategy (multi vs single)
+			if(models.length > 1) {
+				models = models.reverse();
+				const uuid = filters.length == 1 && filters[0].col === 'uuid';
+
+				// temporary limitation, won't implement feature until needed
+				if(!uuid) throw new Error("Unsupported: Cannot currently do MULTI-UPDATE except via uuid filters");
+
+				return await db.atomic(async () => {
+					for(const entry of models) {
+						await entry.model.do_update(db, entry.data, entry.fields, filters);
+					}
+				}, `MULTI-UPDATE ${models.map(m => m.model.$config.prefix).join(" -> ")}`);
+			} else if(models.length == 1) {
+				// @ts-ignore FIXME: this is a fucky-wucky. How to solve?
+				return await models[0].model.do_update(db, models[0].data, models[0].fields, filters);
+			}
+			throw new Error("Cannot update table with no columns to change");
+		}
+
+		return await this.do_update(db, entity, this.getFields(entity, update), filters);
+	}
+
+	private static async do_update<C extends EClass<any>>(this:C, db:Connection, entity:InstanceType<C>, fields:string[], filters:Filter[] = []) : Promise<any> {
+		fields = fields.filter(f => f != 'uuid');
+		if(fields.length < 1) throw new Error('Cannot update table with no columns to change');
 		const query = new UpdateBuilder(entity, fields).filter(filters, this);
 		return await query.execute(db);
 	}
@@ -184,6 +229,11 @@ export class Entity {
 
 	static getSupertype() {
 		return Serializer.lookup(this.$config.inherits.parentClass) as EClass<any>;
+	}
+
+	static getFields<C extends EClass<any>>(this:C, entity:InstanceType<C>, fields:FieldSet<C> = '*'){
+		const all = this.$config.fields[fields];
+		return Object.keys(entity).filter(f => all.includes(f));
 	}
 
 	/** Convert boolean fields from string '0' and '1' to primitive false and true. */
