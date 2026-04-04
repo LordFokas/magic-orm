@@ -288,7 +288,17 @@ class DBUtil {
 			}
 			if(params.length > 0){
 				const param = params.shift();
-				pretty.color(typeof param === "string" ? strc : prmc).write(param);
+				if(typeof param === "string") {
+                    if(param.length > 20) {
+                        const begin = param.substring(0, 8);
+                        const end = param.substring(param.length - 8);
+                        pretty.color(strc).write(begin).color('red').write('...').color(strc).write(end);
+                    } else {
+                        pretty.color(strc).write(param);
+                    }
+                }else{
+                    pretty.color(prmc).write(param);
+                }
 			}
 		}
 

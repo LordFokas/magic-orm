@@ -5,7 +5,7 @@ import { Logger } from '@lordfokas/loggamus';
 
 import { type Connection } from './DB.js';
 import { SelectBuilder, UpdateBuilder, type Filter } from './QueryBuilder.js';
-import { Class, NS, UUID, SkipUUID, NamespacedUUID, EntityConfig, Primitive, TableFields, ForeignKey } from './Structures.js';
+import { Class, NS, UUID, SkipUUID, NamespacedUUID, EntityConfig, Primitive, TableFields } from './Structures.js';
 import { Serializer } from './Serializer.js';
 
 let $logger:Logger = Logger.getDefault();
@@ -82,6 +82,8 @@ export class Entity {
 
 	/** Actually create the entities respecting the inheritance chain. */
 	private static async create_chain<C extends EClass<any>>(this:C, db:Connection, ...entities:InstanceType<C>[]) : Promise<any> {
+		this.beforeCreate(...entities);
+		
 		if(this.isSubtype()){
 			await this.getSupertype().create_chain(db, ...entities);
 		}
@@ -124,6 +126,8 @@ export class Entity {
 					});
 				}
 				if(model.isSubtype()){ 
+					update = model.$config.chain[update] as any;
+					if(!update) break;
 					model = model.getSupertype();
 					data = new model(data);
 				}
@@ -164,6 +168,8 @@ export class Entity {
 	static async read<C extends EClass<any>>(this:C, db:false, select?:FieldSet<C>, filters?:Filter[]) : Promise<SelectBuilder>;
 	static async read<C extends EClass<any>>(this:C, db:Connection, select?:FieldSet<C>, filters?:Filter[]) : Promise<InstanceType<C>[]>;
 	static async read<C extends EClass<any>>(this:C, db:Connection|false, select:FieldSet<C> = '*', filters:Filter[] = []) : Promise<InstanceType<C>[] | SelectBuilder>{
+		const fields = this.$config.fields[select];
+		if(!fields) throw new Error(`No such field set: ${select}`);
 		const own = this.$config.fields["*"];
 		const local = filters.filter(f => own.includes(f.col));
 		filters = filters.filter(f => !local.includes(f));
@@ -172,11 +178,15 @@ export class Entity {
 			throw new Error(`Column(s) ${filters.map(f => "'"+f.col+"'").join(', ')} not found in table ${this.$config.table}`);
 		}
 
-		const query = this.select(select, local);
+		// Create the query itself
+		const query = new SelectBuilder(this, this.ALIAS(fields)).filter(filters, this);
+		const order = this.$config.order;
+		if(order) query.order(this.COL(order));
 
-		// Join table we inherit from
-		if(this.isSubtype()) {
-			query.join(await this.getSupertype().inherit(this.$config.prefix, select as any, filters), this.$config.inherits);
+		// Join table we inherit from if the fieldset generates any other joins
+		if(this.isSubtype() && this.$config.chain[select]) {
+			const parent = await this.getSupertype().read_parent(this.$config.prefix, this.$config.chain[select] as any, filters);
+			if(parent) query.join(parent, this.$config.inherits);
 		}
 
 		if(db === false) return query;
@@ -185,7 +195,7 @@ export class Entity {
 	}
 
 	/** Create queries for table inheritance. */
-	private static async inherit<C extends EClass<any>>(this:C, prefix:string, select?:FieldSet<C>, filters?:Filter[]) : Promise<SelectBuilder>{
+	private static async read_parent<C extends EClass<any>>(this:C, prefix:string, select?:FieldSet<C>, filters?:Filter[]) : Promise<SelectBuilder>{
 		const own = this.$config.fields["*"];
 		const local = filters.filter(f => own.includes(f.col));
 		filters = filters.filter(f => !local.includes(f));
@@ -195,26 +205,21 @@ export class Entity {
 		}
 
 		let fields = this.$config.fields[select] as string[];
-		if(!fields) throw new Error(`No such field set: ${select}`);
-		fields = fields.filter(f => f != 'uuid');
-		const query = new SelectBuilder(this, this.ALIAS(fields, this.$config.prefix, prefix)).filter(local, this);
+		let query:SelectBuilder;
+		if(fields) { // only generate a query for joining this table if the fieldset exists
+			fields = fields.filter(f => f != 'uuid');
+			query = new SelectBuilder(this, this.ALIAS(fields, this.$config.prefix, prefix)).filter(local, this);
+		}
 	
-		// Join table we inherit from
-		if(this.isSubtype()) {
-			query.join(await this.getSupertype().inherit(this.$config.prefix, select as any, filters), this.$config.inherits);
+		// Join table we inherit from if the fieldset generates any other joins
+		if(this.isSubtype() && this.$config.chain[select]) {
+			const parent = await this.getSupertype().read_parent(this.$config.prefix, this.$config.chain[select] as any, filters);
+			if(!query) return parent; // if we're not adding ourselves, return parent directly
+			if(parent) query.join(parent, this.$config.inherits); // only join if we have fields from parent and ourselves
 		}
 
-		return query;
-	}
-
-	/** Get a SelectBuilder for a set of columns and filters */
-	static select<C extends EClass<any>>(this:C, select:FieldSet<C> = '*', filters:Filter[] = []) : SelectBuilder {
-		const fields = this.$config.fields[select];
-		if(!fields) throw new Error(`No such field set: ${select}`);
-		const query = new SelectBuilder(this, this.ALIAS(fields)).filter(filters, this);
-		const order = this.$config.order;
-		if(order) query.order(this.COL(order));
-		return query;
+		if(!query) $logger.warn(`Inefficient query at ${this.name}/{select} - Use an unset chain instead`);
+		return query; // our table if it was selected, joined with parent if also selected, or undefined if subtype and not selected
 	}
 
 	protected static $of<C extends EClass<any>>(this:C, row:object, fn?:(dlo:InstanceType<C>, row:object) => void) : InstanceType<C> {
@@ -236,6 +241,9 @@ export class Entity {
 		if(all === undefined && allowNull) return [];
 		return Object.keys(entity).filter(f => all.includes(f));
 	}
+
+	/** Hook to fire before creation to make adjustements to entities. */
+	protected static beforeCreate<C extends EClass<any>>(this:C, ...entity:InstanceType<C>[]){}
 
 	/** Convert boolean fields from string '0' and '1' to primitive false and true. */
 	static #booleans(entity:Entity) : void {
@@ -315,15 +323,15 @@ export class Entity {
 	 * Update this Entity's DB record. Optionally specify a stricter list of fields to update.
 	 * Will fail if a UUID isn't present.
 	 */
-	async update<C extends Entity>(this:C, db:Connection, fields:FieldSet<EClass<C>> = '*') : Promise<any> {
+	async update<C extends typeof Entity>(this:InstanceType<C>, db:Connection, fields:FieldSet<C> = '*') : Promise<any> {
 		if(!this.uuid) throw new Error('Update failed: Entity doesn\'t contain a UUID');
 
-		return await (this.constructor as typeof Entity)
+		return await (this.constructor as C)
             .update(db, this, fields, [{ col: 'uuid', var: this.uuid }]);
 	}
 
 	/** Upserts (update or insert) this Entity, depending on wether or not this object has a UUID. */
-	async upsert<C extends Entity>(this:C, db:Connection, fields:FieldSet<EClass<C>> = '*') : Promise<any> {
+	async upsert<C extends typeof Entity>(this:InstanceType<C>, db:Connection, fields:FieldSet<C> = '*') : Promise<any> {
 		if(this.uuid) return await this.update(db, fields);
 		else return await this.insert(db);
 	}
