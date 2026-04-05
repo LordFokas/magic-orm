@@ -226,7 +226,7 @@ export class Scaffolder {
                 ...Object.keys(spec.fields).map(k => `'${k}'`)
             ].join(', ');
 
-            const chain = spec.entity.extends ? ["chain: { '*': '*' },"] : [];
+            const chain = spec.entity.extends ? ["    chain: { '*': '*' },"] : [];
 
             const inherits = spec.entity.extends ? [
                 `    inherits: {`,
