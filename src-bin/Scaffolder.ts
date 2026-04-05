@@ -43,30 +43,39 @@ type Spec = {
 
 export class Scaffolder {
     private migration: Migration;
-    private pool: Pool;
+    private pool: Pool|null;
+    private gens: string[];
     private keys_r: Record<string, { entity: string, exp: string, key: string }[]> = {};
 
     static readJSON(file: string){
         return JSON.parse(fs.readFileSync(file).toString()) as any;
     }
 
-    static async start(dir: string, file: string, pool: Pool){
-        await new Scaffolder(dir, file, pool).execute();
+    static async start(dir: string, file: string, pool: Pool|null, gens:string[]){
+        await new Scaffolder(dir, file, pool, gens).execute();
     }
 
-    private constructor(dir: string, file: string, pool: Pool){
+    private constructor(dir: string, file: string, pool: Pool|null, gens:string[]){
         this.migration = Scaffolder.readJSON(path.join(dir, file));
         this.pool = pool;
+        this.gens = gens;
     }
 
     private async execute(){
         this.generateUUIDTypeDefs();
         this.processRelationships();
         this.generateEntityCode();
-        this.writeModelDefinitionsFile();
-        this.writeModelConfigurationsFile();
-        this.writeModelClasses();
-        await this.applyDatabaseChanges();
+
+        if(this.gens.includes("TS")){
+            this.writeModelDefinitionsFile();
+            this.writeModelConfigurationsFile();
+            this.writeModelClasses();
+        }
+
+        if(this.gens.includes("SQL")){
+            await this.applyDatabaseChanges();
+        }
+        
         Logger.info("Done.");
     }
 
@@ -116,43 +125,47 @@ export class Scaffolder {
             Logger.debug("- " + model);
             const spec = models[model];
 
-            spec.generatedTS = {
-                K: `export type K_${model} = ${spec.entity._subclasses ? spec.entity._subclasses.map(k => `K_${k}`).join(' | '): `"${spec.entity.prefix}"`}`,
-                T: [
-                    `export interface T_${model}${spec.entity.extends ? ` extends T_${spec.entity.extends}` : ''} {`,
-                    `    uuid: UUID<K_${model}>`,
-                    ...spec.keys.map(v => `    uuid_${v.key}: UUID<K_${v.entity}>`),
-                    ...Object.entries(spec.fields).map(([k, v]) => `    ${k}: ${types[v].ts}`),
-                    ...spec.keys.map(v => `    ${v.key}?: T_${v.entity}`),
-                    ...this.keys_r[model].filter(r => r.exp && r.exp.length > 0).map(v => `    ${v.exp}?: T_${v.entity}[]`),
-                    `}`
-                ].join('\n')
+            if(this.gens.includes("TS")){
+                spec.generatedTS = {
+                    K: `export type K_${model} = ${spec.entity._subclasses ? spec.entity._subclasses.map(k => `K_${k}`).join(' | '): `"${spec.entity.prefix}"`}`,
+                    T: [
+                        `export interface T_${model}${spec.entity.extends ? ` extends T_${spec.entity.extends}` : ''} {`,
+                        `    uuid: UUID<K_${model}>`,
+                        ...spec.keys.map(v => `    uuid_${v.key}: UUID<K_${v.entity}>`),
+                        ...Object.entries(spec.fields).map(([k, v]) => `    ${k}: ${types[v].ts}`),
+                        ...spec.keys.map(v => `    ${v.key}?: T_${v.entity}`),
+                        ...this.keys_r[model].filter(r => r.exp && r.exp.length > 0).map(v => `    ${v.exp}?: T_${v.entity}[]`),
+                        `}`
+                    ].join('\n')
+                }
             }
-
-            spec.generatedSQL = {
-                T: [
-                    `CREATE TABLE IF NOT EXISTS ${schema}.${spec.entity.table} (`,
-                    `    uuid ${types[`UUID<${spec.entity.prefix}>`].sql} PRIMARY KEY,`,
-                    ...spec.keys.map(r => `    uuid_${r.key} ${types[`UUID<${models[r.entity].entity.prefix}>`].sql},`),
-                    ...Object.entries(spec.fields).map(([k, v]) => `    ${k} ${types[v].sql},`)
-                ].join('\n').replace(/,$/, '\n);'),
-                C: spec.keys.map(r => [
+            
+            if(this.gens.includes("SQL")) {
+                spec.generatedSQL = {
+                    T: [
+                        `CREATE TABLE IF NOT EXISTS ${schema}.${spec.entity.table} (`,
+                        `    uuid ${types[`UUID<${spec.entity.prefix}>`].sql} PRIMARY KEY,`,
+                        ...spec.keys.map(r => `    uuid_${r.key} ${types[`UUID<${models[r.entity].entity.prefix}>`].sql},`),
+                        ...Object.entries(spec.fields).map(([k, v]) => `    ${k} ${types[v].sql},`)
+                    ].join('\n').replace(/,$/, '\n);'),
+                    C: spec.keys.map(r => [
+                            `ALTER TABLE ${schema}.${spec.entity.table}`,
+                            `DROP CONSTRAINT IF EXISTS fk_${model}_${r.key};`,
+                            `ALTER TABLE ${schema}.${spec.entity.table}`,
+                            `ADD CONSTRAINT fk_${model}_${r.key}`,
+                            `FOREIGN KEY (uuid_${r.key})`,
+                            `REFERENCES ${models[r.entity].entity.table}(uuid);`
+                        ].join(' ')
+                    ).concat(spec.entity.extends ? [[
                         `ALTER TABLE ${schema}.${spec.entity.table}`,
-                        `DROP CONSTRAINT IF EXISTS fk_${model}_${r.key};`,
+                        `DROP CONSTRAINT IF EXISTS fk_${model}_extends_${spec.entity.extends};`,
                         `ALTER TABLE ${schema}.${spec.entity.table}`,
-                        `ADD CONSTRAINT fk_${model}_${r.key}`,
-                        `FOREIGN KEY (uuid_${r.key})`,
-                        `REFERENCES ${models[r.entity].entity.table}(uuid);`
-                    ].join(' ')
-                ).concat(spec.entity.extends ? [[
-                    `ALTER TABLE ${schema}.${spec.entity.table}`,
-                    `DROP CONSTRAINT IF EXISTS fk_${model}_extends_${spec.entity.extends};`,
-                    `ALTER TABLE ${schema}.${spec.entity.table}`,
-                    `ADD CONSTRAINT fk_${model}_extends_${spec.entity.extends}`,
-                    `FOREIGN KEY (uuid)`,
-                    `REFERENCES ${models[spec.entity.extends].entity.table}(uuid);`
-                ].join('\n')] : []).join('\n').trim()
-            };
+                        `ADD CONSTRAINT fk_${model}_extends_${spec.entity.extends}`,
+                        `FOREIGN KEY (uuid)`,
+                        `REFERENCES ${models[spec.entity.extends].entity.table}(uuid);`
+                    ].join('\n')] : []).join('\n').trim()
+                };
+            }
         }
     }
 
@@ -314,7 +327,7 @@ export class Scaffolder {
             Logger.debug(model + " ...");
             const spec = this.migration.models[model];
             Logger.fine(spec.generatedSQL.T);
-            await this.pool.query(spec.generatedSQL.T);
+            await this.pool?.query(spec.generatedSQL.T);
         }
         Logger.info("Begin writing database constraints");
         for(const model in this.migration.models){
@@ -325,7 +338,7 @@ export class Scaffolder {
             }
             Logger.debug(model + " ...");
             Logger.fine(spec.generatedSQL.C);
-            await this.pool.query(spec.generatedSQL.C);
+            await this.pool?.query(spec.generatedSQL.C);
         }
     }
 }

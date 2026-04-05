@@ -21,6 +21,7 @@ const levels = {
     ERROR: LogLevel.ERROR,
     FATAL: LogLevel.FATAL
 } as Record<string, LogLevel>;
+const gens = ["TS", "SQL", "ALL"];
 
 program.command("scaffold").description("Scaffold models for your application")
 .argument("<sourcedir>", "model definition source dir")
@@ -31,6 +32,7 @@ program.command("scaffold").description("Scaffold models for your application")
 .option("-P <dbpass>")
 .option("-N <dbname>")
 .option("-L <level>", "minimum log level", "INFO")
+.option("-G <generate>", "what to autogen", "ALL")
 .action((sourcedir: string, version: string, options) => {
     const L = options.L.toUpperCase();
     let level = levels[L];
@@ -44,6 +46,12 @@ program.command("scaffold").description("Scaffold models for your application")
     }
     Logger.getDefault().setMinLevel(level);
     
+    const G = options.G.toUpperCase();
+    if(!gens.includes(G)) {
+        Logger.error(`Invalid -G option "${G}", allowed values are: ${gens.join(", ")}`);
+        process.exit(1);
+    }
+    const gen = G === "ALL" ? ["TS", "SQL"] : [G];
 
     fs.readdir(sourcedir, (err, files) => {
         if(err){
@@ -80,16 +88,16 @@ program.command("scaffold").description("Scaffold models for your application")
             }
 
             // Establish DB connection
-            const pool = new pg.Pool({
+            const pool = gens.includes("SQL") ? new pg.Pool({
                 host: options.H,
                 port: parseInt(options.p),
                 user: options.U,
                 password: options.P,
                 database: options.N
-            });
+            }) : null;
 
             // Start scaffolding
-            Scaffolder.start(sourcedir, source, pool).catch(Logger.error);
+            Scaffolder.start(sourcedir, source, pool, gens).catch(Logger.error);
         }
     });
 });

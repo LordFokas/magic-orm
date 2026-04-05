@@ -83,7 +83,7 @@ export class Entity {
 	/** Actually create the entities respecting the inheritance chain. */
 	private static async create_chain<C extends EClass<any>>(this:C, db:Connection, ...entities:InstanceType<C>[]) : Promise<any> {
 		this.beforeCreate(...entities);
-		
+
 		if(this.isSubtype()){
 			await this.getSupertype().create_chain(db, ...entities);
 		}
@@ -179,7 +179,7 @@ export class Entity {
 		}
 
 		// Create the query itself
-		const query = new SelectBuilder(this, this.ALIAS(fields)).filter(filters, this);
+		const query = new SelectBuilder(this, this.ALIAS(fields)).filter(local, this);
 		const order = this.$config.order;
 		if(order) query.order(this.COL(order));
 
