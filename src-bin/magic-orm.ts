@@ -97,7 +97,7 @@ program.command("scaffold").description("Scaffold models for your application")
             }) : null;
 
             // Start scaffolding
-            Scaffolder.start(sourcedir, source, pool, gens).catch(Logger.error);
+            Scaffolder.start(sourcedir, source, pool, gen).catch(Logger.error);
         }
     });
 });

@@ -226,6 +226,8 @@ export class Scaffolder {
                 ...Object.keys(spec.fields).map(k => `'${k}'`)
             ].join(', ');
 
+            const chain = spec.entity.extends ? ["chain: { '*': '*' },"] : [];
+
             const inherits = spec.entity.extends ? [
                 `    inherits: {`,
                 `        parentClass: "${spec.entity.extends}",`,
@@ -271,7 +273,7 @@ export class Scaffolder {
                 `        '*': [ ${fields} ],`,
                 `        'uuid': [ 'uuid' ]`,
                 `    },`,
-                `    chain: ${spec.entity.extends ? "{ '*': '*' }" : "undefined"},`,
+                ...chain,
                 `    booleans: [${booleans.map(([k, _]) => `'${k}'`).join(', ')}]${ booleans.length ? '' : ' as string[]' },`,
                 ...inherits,
                 `    parents: {`,
