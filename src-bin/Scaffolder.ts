@@ -32,6 +32,7 @@ type Spec = {
         uuid: "small"|"standard"|"long"|"huge"
     }
     fields: Record<string, string>
+    chain?: Record<string, string>
     keys: {
         entity: string // other entity we are linking to
         key: string // field name for the entity on the N side. The table field is assumed to be uuid_field.
@@ -270,6 +271,7 @@ export class Scaffolder {
                 `        '*': [ ${fields} ],`,
                 `        'uuid': [ 'uuid' ]`,
                 `    },`,
+                `    chain: ${spec.entity.extends ? "{ '*': '*' }" : "undefined"},`,
                 `    booleans: [${booleans.map(([k, _]) => `'${k}'`).join(', ')}]${ booleans.length ? '' : ' as string[]' },`,
                 ...inherits,
                 `    parents: {`,
