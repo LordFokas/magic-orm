@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
+import path from "node:path";
 import fs from 'node:fs';
 import { Logger, PrettyPrinter, LogLevel } from '@lordfokas/loggamus';
 import { Command } from 'commander';
-import { Scaffolder } from './Scaffolder.js';
 import pg from 'pg';
+import { Schema } from "./Schema.js";
 
 function readJSON(file: string){
     return JSON.parse(fs.readFileSync(file).toString()) as any;
@@ -94,10 +95,19 @@ program.command("scaffold").description("Scaffold models for your application")
                 user: options.U,
                 password: options.P,
                 database: options.N
-            }) : null;
+            }) : undefined;
 
             // Start scaffolding
-            Scaffolder.start(sourcedir, source, pool, gen).catch(Logger.error);
+            const json = readJSON(path.join(sourcedir, source));
+            const schema = new Schema(source, json, pool);
+            (async () => {
+                if(gens.includes("SQL")) {
+                    await schema.install().execute();
+                }
+                if(gens.includes("TS")) {
+                    await schema.typescript().execute();
+                }
+            })();
         }
     });
 });
