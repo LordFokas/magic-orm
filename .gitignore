@@ -8,6 +8,7 @@ bin
 # Editors
 *.sublime-*
 *.code-workspace
+.vscode
 
 # Testing
 .sandbox

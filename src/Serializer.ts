@@ -18,6 +18,10 @@ export class Serializer {
 		return this.#forward[name];
 	}
 
+	static name_of<T extends Entity>(entity: Class<T>){
+		return this.#reverse[entity.name];
+	}
+
 	/** Transforms a JSON structure into concrete entities */
 	static fromJSON<T extends Entity>(data:string) : T {
 		if(typeof data !== 'string')

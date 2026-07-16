@@ -3,7 +3,6 @@ import { useLogger as setEntityLogger } from './Entity.js';
 import { Logger } from '@lordfokas/loggamus';
 
 
-
 export * as _h4x0rz from './Hacks.js'; // required for Promise prototype fuckery
 export { DB, type Connection } from './DB.js';
 
@@ -16,6 +15,8 @@ export {
 export { Serializer } from './Serializer.js';
 
 export { Entity, FieldSet } from './Entity.js';
+
+export { ORMError } from './ORMError.js';
 
 
 
