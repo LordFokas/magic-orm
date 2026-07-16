@@ -31,6 +31,7 @@ class MagicCLI {
     }
 
     static run() {
+        this.makeStatus();
         this.makeTypescript();
         this.makeInstall();
 
@@ -59,6 +60,46 @@ class MagicCLI {
         if(options.includes("dry")) cmd.option("--dry-run", "dry run: planning only, no execution");
         if(options.includes("waiver")) cmd.requiredOption("--if-something-goes-wrong <IT_WAS_MY_FAULT>", "confirmation and waiver for when you call risky commands");
         return cmd;
+    }
+
+    private static makeStatus() {
+        const cmd = this.program.command("status").description("Check environment status");
+
+        this.addOptions(cmd, "db", "log")
+        .argument("<sourcedir>", "model definition source dir")
+        .action(async (dir, options) => {
+            this.setLogLevel(options.L);
+            let version = null;
+
+            await this.withDB(options, async db => {
+                await this.createMetadataTable(db, options.S);
+                const result = await db.query([
+                    `SELECT property, value`,
+                    `FROM ${options.S}.${this.METADATA}`
+                ].join('\n'));
+                if(result.rowCount === 0) {
+                    Logger.warn(`No metadata records in ${options.S}.${this.METADATA}`);
+                } else {
+                    Logger.info("Database metadata:  [" + result.rowCount + "]")
+                    for(const {k, v} of result.rows) {
+                        if(k === "version") version = v;
+                        Logger.info(`- ${k}: ${v}`);
+                    }
+                }
+                Logger.info("");
+            });
+
+            const versions = this.getVersions(dir, false);
+            if(versions && versions.length > 0) {
+                Logger.info("Available schema versions:");
+                for(const v of versions) {
+                    if(v === version) Logger.warn(`- ${v}  <-- current DB version`);
+                    else Logger.info(`- ${v}`);
+                }
+            } else {
+                Logger.warn("No schema versions found.");
+            }
+        });
     }
 
     private static makeTypescript() {
@@ -199,20 +240,6 @@ class MagicCLI {
         });
     }
 
-    private static $warn(...msgs: string[]) {
-        let len = -1;
-        msgs.forEach(m => {
-            len = Math.max(len, m.length);
-        });
-        msgs = msgs.map(m => '*  ' + m + ' '.repeat(len - m.length) + '  *');
-        const bars = '*'.repeat(len + 6);
-        return () => {
-            Logger.warn(bars);
-            msgs.forEach(m => Logger.warn(m));
-            Logger.warn(bars);
-        }
-    }
-
     private static pickVersion(dir: string, version: string, log: boolean = true) {
         const versions = this.getVersions(dir);
         let source;
@@ -257,6 +284,20 @@ class MagicCLI {
         Logger.getDefault().setMinLevel(level);
     }
 
+    private static $warn(...msgs: string[]) {
+        let len = -1;
+        msgs.forEach(m => {
+            len = Math.max(len, m.length);
+        });
+        msgs = msgs.map(m => '*  ' + m + ' '.repeat(len - m.length) + '  *');
+        const bars = '*'.repeat(len + 6);
+        return () => {
+            Logger.warn(bars);
+            msgs.forEach(m => Logger.warn(m));
+            Logger.warn(bars);
+        }
+    }
+
     private static confirmWaiver(options: any, warn?: () => void) {
         if(options.ifSomethingGoesWrong !== "IT_WAS_MY_FAULT") {
             throw new Error([
@@ -271,7 +312,7 @@ class MagicCLI {
             const timer = setInterval(() => {
                 if(countdown == 0) {
                     clearTimeout(timer);
-                    process.stdout.write("BEGIN.");
+                    process.stdout.write("BEGIN.\n\n");
                     return resolve();
                 }
                 process.stdout.write(countdown+"... ");

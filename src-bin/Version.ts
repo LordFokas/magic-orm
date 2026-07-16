@@ -451,14 +451,14 @@ export class Version {
     }
 
     private foreachTable(fn: (name: string, table: Table) => void) {
-        for(const name in this.models){
+        for(const name in this.tables){
             const table = this.tables[name];
             fn(name, table);
         }
     }
 
     private async queryEachTable(fn: (name: string, table: Table) => string[]) {
-        for(const name in this.models){
+        for(const name in this.tables){
             const table = this.tables[name];
             await this.query(fn(name, table));
         }

@@ -1,14 +1,19 @@
+import { Logger } from "@lordfokas/loggamus";
+
 export class Task {
     readonly description: string;
-    private readonly steps: {name: string, fn: () => Promise<void> | void }[] = [];
+    private readonly steps: {name: string, fn: (depth: number) => Promise<void> | void }[] = [];
 
     constructor(description: string) {
         this.description = description;
     }
 
-    async execute() {
+    async execute(depth: number = 0) {
+        if(depth == 0) Logger.info(this.description);
+        depth++;
         for(const step of this.steps) {
-            await step.fn();
+            Logger.info("|   ".repeat(depth-1)+ "|-- " + step.name);
+            await step.fn(depth);
         }
     }
 
@@ -23,7 +28,7 @@ export class Task {
     addSubtask(task: Task) {
         this.steps.push({
             name: task.description,
-            fn: task.execute.bind(task)
+            fn: d => task.execute(d)
         });
         return this;
     }
