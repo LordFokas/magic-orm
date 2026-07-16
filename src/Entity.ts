@@ -257,6 +257,7 @@ export class Entity {
 		return query; // our table if it was selected, joined with parent if also selected, or undefined if subtype and not selected
 	}
 
+	/** Allows custom entities to do special joins and hydrate children from one row via custom code */
 	protected static $of<C extends EClass<any>>(this:C, row:object, fn?:(dlo:InstanceType<C>, row:object) => void) : InstanceType<C> {
 		const dlo = new this().$ingest(row);
 		if(fn) fn(dlo, row);

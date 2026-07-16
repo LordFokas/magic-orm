@@ -2,7 +2,7 @@ import path from "node:path";
 import fs from "node:fs";
 import pg from 'pg';
 import { Logger } from "@lordfokas/loggamus";
-import { Task } from "./Task";
+import { Task } from "./Task.js";
 
 const uuidmap = {
     small: 16,
@@ -59,7 +59,7 @@ type TableDiff = {
     dropFKs: ConstraintFK[]
 }
 
-export class Schema {
+export class Version {
     readonly version: string;
     private readonly pool?: pg.Pool;
     private schema: string;
@@ -77,10 +77,10 @@ export class Schema {
     private models: Record<string, Model> = {};
     private tables: Record<string, Table> = {};
 
-    constructor(version: string, json: any, pool?: pg.Pool) {
+    constructor(version: string, schema: string, json: any, pool?: pg.Pool) {
         this.version = version;
         this.pool = pool;
-        this.schema = json.schema;
+        this.schema = schema;
         this.types = json.types;
         this.files = json.files;
         this.models = json.models;
@@ -269,15 +269,29 @@ export class Schema {
         );
     }
 
-    upgrade(current: Schema) : Task {
+    truncate() : Task {
+        return (
+            new Task("SQL TRUNCATE ALL TABLES of v"+this.version)
+            .addStep("TRUNCATE ALL KNOWN TABLES", () => this.queryEachTable(name => [`TRUNCATE TABLE ${this.schema}.${name} CASCADE;`]))
+        );
+    }
+
+    drop_all() : Task {
+        return (
+            new Task("SQL DROP ALL TABLES of v"+this.version)
+            .addStep("DROP ALL KNOWN TABLES", () => this.queryEachTable(name => [`DROP TABLE ${this.schema}.${name} CASCADE;`]))
+        );
+    }
+
+    upgrade(current: Version) : Task {
         return this.diffSchema(true, current);
     }
 
-    downgrade(current: Schema) : Task {
+    downgrade(current: Version) : Task {
         return this.diffSchema(false, current);
     }
 
-    private diffSchema(upgrade: boolean, current: Schema) : Task {
+    private diffSchema(upgrade: boolean, current: Version) : Task {
         const diff: Diff = {
             createTables: [],
             dropTables: [],

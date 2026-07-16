@@ -1,7 +1,7 @@
 {
   "name": "@lordfokas/magic-orm",
   "type": "module",
-  "version": "4.0.4-d",
+  "version": "4.1.0-alpha.1",
   "author": "LordFokas",
   "license": "MIT",
   "description": "A class-based ORM in TypeScript. Unorthodox and extremely opinionated, made to fit my specific use cases.",
@@ -21,7 +21,8 @@
     "build": "tsc -p ./tsconfig.json",
     "prebuild-bin": "rm -rf ./bin",
     "build-bin": "tsc -p ./tsconfig-bin.json",
-    "prepublishOnly": "npm run build && npm run build-bin"
+    "prepublishOnly": "npm run build && npm run build-bin",
+    "cli": "node ./bin/magic-orm.js"
   },
   "bin": {
     "magic-orm": "bin/magic-orm.js"
@@ -30,6 +31,7 @@
     "@types/node": "^20.11.0",
     "@types/pg": "^8.10.9",
     "@types/pg-pool": "^2.0.6",
+    "@types/semver": "^7.7.1",
     "@types/uuid": "^9.0.7",
     "typescript": "^5.8.3"
   },
@@ -37,6 +39,7 @@
     "@lordfokas/loggamus": "^2.0.1",
     "commander": "^11.1.0",
     "pg": "^8.11.3",
-    "uuid": "^9.0.1"
+    "semver": "^7.8.5",
+    "uuid": "^14.0.1"
   }
 }

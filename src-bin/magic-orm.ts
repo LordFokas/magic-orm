@@ -2,114 +2,359 @@
 
 import path from "node:path";
 import fs from 'node:fs';
-import { Logger, PrettyPrinter, LogLevel } from '@lordfokas/loggamus';
+
+import semver_compare from 'semver/functions/compare.js';
+import semver_valid from 'semver/functions/valid.js';
 import { Command } from 'commander';
 import pg from 'pg';
-import { Schema } from "./Schema.js";
 
-function readJSON(file: string){
-    return JSON.parse(fs.readFileSync(file).toString()) as any;
+import { Logger, LogLevel } from '@lordfokas/loggamus';
+import { Version } from './Version.js';
+import { Task } from "./Task.js";
+
+
+class MagicCLI {
+    static readonly METADATA = "__magic_orm__";
+    static readonly pkg = this.readJSON("./package.json");
+    static readonly program = new Command("magic-orm").version(this.pkg.version, "-V").description("Command line tools for magic-orm");
+    static readonly levels = {
+        FINE: LogLevel.FINE,
+        DEBUG: LogLevel.DEBUG,
+        INFO: LogLevel.INFO,
+        WARN: LogLevel.WARN,
+        ERROR: LogLevel.ERROR,
+        FATAL: LogLevel.FATAL
+    } as Record<string, LogLevel>;
+
+    static readJSON(file: string){
+        return JSON.parse(fs.readFileSync(file).toString()) as any;
+    }
+
+    static run() {
+        this.makeTypescript();
+        this.makeInstall();
+
+        this.makeTruncate();
+        this.makeDropAll();
+        this.makeNuke();
+
+        try{
+            this.program.parse();
+        } catch(error: any) {
+            Logger.error(error);
+        }
+    }
+
+    static addOptions(cmd: Command, ...options: ("db"|"log"|"dry"|"waiver")[]) {
+        if(options.includes("db")) {
+            cmd
+            .option("-H <dbhost>", "database host")
+            .option("-p <dbport>", "database port", "5432")
+            .option("-U <dbuser>", "database user")
+            .option("-P <dbpass>", "database password")
+            .option("-N <dbname>", "database name")
+            .option("-S <schema>", "database schema", "public");
+        }
+        if(options.includes("log")) cmd.option("-L <level>", "minimum log level", "INFO");
+        if(options.includes("dry")) cmd.option("--dry-run", "dry run: planning only, no execution");
+        if(options.includes("waiver")) cmd.requiredOption("--if-something-goes-wrong <IT_WAS_MY_FAULT>", "confirmation and waiver for when you call risky commands");
+        return cmd;
+    }
+
+    private static makeTypescript() {
+        const cmd = this.program.command("typescript").description("Create TS files for your application");
+
+        this.addOptions(cmd, "db", "log")
+        .argument("<sourcedir>", "model definition source dir")
+        .argument("<version>", "version to generate")
+        .action(async (sourcedir: string, v: string, options) => {
+            this.setLogLevel(options.L);
+
+            if(v === "current") {
+                await this.withDB(options, async db => {
+                    const current = await this.getCurrentVersion(db, options.S);
+                    if(current === false) {
+                        throw new Error(`No version installed in schema '${options.S}'`)
+                    }
+                    v = current;
+                });
+            }
+
+            const { selected } = this.pickVersion(sourcedir, v);
+            const json = this.readJSON(path.join(sourcedir, selected + ".json"));
+            const version = new Version(selected, options.S, json);
+
+            await version.typescript().execute();
+        });
+    }
+
+    private static makeInstall() {
+        const cmd = this.program.command("install").description("Create models for your application");
+
+        this.addOptions(cmd, "db", "log", "dry")
+        .argument("<sourcedir>", "model definition source dir")
+        .argument("<version>", "version to install")
+        .action(async (sourcedir: string, v: string, options) => {
+            this.setLogLevel(options.L);
+            await this.withDB(options, async db => {
+                const current = await this.getCurrentVersion(db as pg.Pool, options.S);
+                if(current !== false) {
+                    return Logger.error(`Cannot perform direct install on top of already installed v${current}, use a migration command`);
+                }
+
+                const { selected } = this.pickVersion(sourcedir, v);
+                const json = this.readJSON(path.join(sourcedir, selected + ".json"));
+                const version = new Version(selected, options.S, json, db);
+
+                const task =new Task("Install v"+selected)
+                .addSubtask(version.install())
+                .addStep("Update magic-orm metadata", () => this.setCurrentVersion(db as pg.Pool, options.S, selected))
+                .addSubtask(version.typescript());
+
+                await task.execute();
+            });
+        });
+    }
+
+    private static makeDropAll() {
+        const cmd = this.program.command("drop-all").description("Drop all tables of the installed version");
+
+        this.addOptions(cmd, "db", "log", "waiver")
+        .argument("<sourcedir>", "model definition source dir")
+        .action(async (sourcedir, options) => {
+            this.setLogLevel(options.L);
+
+            await this.withDB(options, async db => {
+                const version = await this.getCurrentVersion(db, options.S);
+                if(version === false) {
+                    throw new Error(`No version installed in schema '${options.S}'`);
+                }
+
+                const json = this.readJSON(path.join(sourcedir, version + ".json"));
+                const current = new Version(version, options.S, json, db);
+
+                await this.confirmWaiver(options, this.$warn(
+                    `Preparing to DROP ALL ON SCHEMA ${options.S}`,
+                    `on ${options.H}:${options.p}`,
+                    `in database ${options.N}`
+                ));
+
+                await current.drop_all().execute();
+            });
+        });
+    }
+
+    private static makeTruncate() {
+        const cmd = this.program.command("truncate").description("Truncate all tables of the installed version");
+
+        this.addOptions(cmd, "db", "log", "waiver")
+        .argument("<sourcedir>", "model definition source dir")
+        .action(async (sourcedir, options) => {
+            this.setLogLevel(options.L);
+
+            await this.withDB(options, async db => {
+                const version = await this.getCurrentVersion(db, options.S);
+                if(version === false) {
+                    throw new Error(`No version installed in schema '${options.S}'`);
+                }
+
+                const json = this.readJSON(path.join(sourcedir, version + ".json"));
+                const current = new Version(version, options.S, json, db);
+
+                await this.confirmWaiver(options, this.$warn(
+                    `Preparing to TRUNCATE ALL ON SCHEMA ${options.S}`,
+                    `on ${options.H}:${options.p}`,
+                    `in database ${options.N}`
+                ));
+
+                await current.truncate().execute();
+            });
+        });
+    }
+
+    private static makeNuke() {
+        const cmd = this.program.command("nuke").description("Drop and recreate the schema");
+
+        this.addOptions(cmd, "db", "log", "waiver")
+        .option("--grant <users...>", "users to GRANT ALL ON SCHEMA to", "postgres")
+        .action(async (options) => {
+            this.setLogLevel(options.L);
+
+            await this.withDB(options, async db => {
+                await this.confirmWaiver(options, this.$warn(
+                    `Preparing to nuke SCHEMA ${options.S}`,
+                    `on ${options.H}:${options.p}`,
+                    `in database ${options.N}`
+                ));
+                const users = Array.isArray(options.grant) ? options.grant as string[] : [ options.grant as string ];
+                await db.query([
+                    `DROP SCHEMA ${options.S} CASCADE;`,
+                    `CREATE SCHEMA ${options.S};`,
+                    ...users.map(user => `GRANT ALL ON SCHEMA ${options.S} TO ${user};`)
+                ].join('\n'));
+            });
+        });
+    }
+
+    private static $warn(...msgs: string[]) {
+        let len = -1;
+        msgs.forEach(m => {
+            len = Math.max(len, m.length);
+        });
+        msgs = msgs.map(m => '*  ' + m + ' '.repeat(len - m.length) + '  *');
+        const bars = '*'.repeat(len + 6);
+        return () => {
+            Logger.warn(bars);
+            msgs.forEach(m => Logger.warn(m));
+            Logger.warn(bars);
+        }
+    }
+
+    private static pickVersion(dir: string, version: string, log: boolean = true) {
+        const versions = this.getVersions(dir);
+        let source;
+        if(version == "latest") {
+            source = versions[versions.length-1];
+            if(log) Logger.info(`Using latest migration: ${source}`);
+        } else if(version == "first") {
+            source = versions[0];
+            if(log) Logger.info(`Using first migration: ${source}`);
+        } else {
+            if(!semver_valid(version)) {
+                throw new Error(`Invalid semver version: '${version}'`);
+            }
+            source = version;
+            if(!versions.includes(source)) {
+                throw new Error(`Error: migration "${source}" not found!`);
+            }
+            if(log) Logger.info(`Using specified migration: ${source}`);
+        }
+        return { selected: source, versions };
+    }
+
+    private static getVersions(dir: string, required: boolean = true) {
+        const versions = fs.readdirSync(dir).filter(f => f.endsWith(".json")).map(f => f.replace(/\.json$/, '')).sort(semver_compare);
+        if(required && versions.length == 0){
+            throw new Error("No migration files found!");
+        }
+        return versions;
+    }
+
+    private static setLogLevel(L: string) {
+        L = L.toUpperCase();
+        let level = this.levels[L];
+        if(!level) {
+            Logger.warn(`Log Level "${L}" not found. Using "INFO".`)
+            level = this.levels.INFO;
+            Logger.info("Allowed log levels: FINE, DEBUG, INFO, WARN, ERROR, FATAL\n");
+        }
+        if(level !== LogLevel.INFO) {
+            Logger.info("Using log level: " + level.name);
+        }
+        Logger.getDefault().setMinLevel(level);
+    }
+
+    private static confirmWaiver(options: any, warn?: () => void) {
+        if(options.ifSomethingGoesWrong !== "IT_WAS_MY_FAULT") {
+            throw new Error([
+                "Only allowed value for --if-something-goes-wrong is 'IT_WAS_MY_FAULT'.",
+                "Because it is your fault.",
+                "Acknowledge it, or use a safer command."
+            ].join('\n'));
+        }
+        if(warn) warn();
+        return new Promise<void>((resolve, reject) => {
+            let countdown = 10;
+            const timer = setInterval(() => {
+                if(countdown == 0) {
+                    clearTimeout(timer);
+                    process.stdout.write("BEGIN.");
+                    return resolve();
+                }
+                process.stdout.write(countdown+"... ");
+                countdown--;
+            }, 1000);
+        });
+    }
+
+    private static async createMetadataTable(db: pg.Pool, schema: string) : Promise<void> {
+        await db.query([
+            `CREATE TABLE IF NOT EXISTS ${schema}.${this.METADATA} (`,
+            `    property VARCHAR(32) PRIMARY KEY,`,
+            `    value    VARCHAR(224)`,
+            `);`
+        ].join('\n'));
+    }
+
+    private static async getCurrentVersion(db: pg.Pool, schema: string) : Promise<string|false> {
+        await this.createMetadataTable(db, schema);
+        const results = await db.query([
+            `SELECT property, value`,
+            `FROM ${schema}.${this.METADATA}`,
+            `WHERE property = 'version';`,
+        ].join('\n'));
+        if(results.rowCount == 1) {
+            return results.rows[0].value;
+        }
+        return false;
+    }
+
+    private static async setCurrentVersion(db: pg.Pool, schema: string, version: string) {
+        await db.query([
+            `INSERT INTO ${schema}.${this.METADATA} (property, value)`,
+            `VALUES ('version', '${version}')`,
+            `ON CONFLICT (property) DO UPDATE SET value = EXCLUDED.value;`
+        ].join('\n'));
+    }
+
+
+    private static async withDB(options: any, fn: (db: pg.Pool) => Promise<void>) {
+        await this.$withDB(options, fn as any);
+    }
+
+    private static async maybeDB(options: any, fn: (db?: pg.Pool) => Promise<void>) {
+        await this.$withDB(options, fn, false);
+    }
+
+    private static async $withDB(options: any, fn: (db?: pg.Pool) => Promise<void>, required: boolean = true) {
+        const missing = [];
+        if(!options.H) missing.push("-H <dbhost>");
+        if(!options.U) missing.push("-U <dbuser>");
+        if(!options.P) missing.push("-P <dbpass>");
+        if(!options.N) missing.push("-M <dbname>");
+
+        if(missing.length > 0) {
+            if(required) {
+                throw new Error("Missing required options: " + missing.join(', '));
+            } else {
+                return await fn(undefined);
+            }
+        }
+
+        const db = new pg.Pool({
+            host: options.H,
+            port: parseInt(options.p),
+            user: options.U,
+            password: options.P,
+            database: options.N
+        });
+
+        try {
+            await fn(db);
+        } finally {
+            db.end();
+        }
+    }
 }
 
-const pkg = readJSON("./package.json");
-const program = new Command("magic-orm").version(pkg.version).description("Command line tools for magic-orm");
-const printer = new PrettyPrinter();
-const levels = {
-    FINE: LogLevel.FINE,
-    DEBUG: LogLevel.DEBUG,
-    INFO: LogLevel.INFO,
-    WARN: LogLevel.WARN,
-    ERROR: LogLevel.ERROR,
-    FATAL: LogLevel.FATAL
-} as Record<string, LogLevel>;
-const gens = ["TS", "SQL", "ALL"];
-
-program.command("scaffold").description("Scaffold models for your application")
-.argument("<sourcedir>", "model definition source dir")
-.argument("<version>", "version to scaffold")
-.option("-H <dbhost>")
-.option("-p <dbport>", "database port", "5432")
-.option("-U <dbuser>")
-.option("-P <dbpass>")
-.option("-N <dbname>")
-.option("-L <level>", "minimum log level", "INFO")
-.option("-G <generate>", "what to autogen", "ALL")
-.action((sourcedir: string, version: string, options) => {
-    const L = options.L.toUpperCase();
-    let level = levels[L];
-    if(!level) {
-        Logger.warn(`Log Level "${L}" not found. Using "INFO".`)
-        level = levels.INFO;
-        Logger.info("Allowed log levels: FINE, DEBUG, INFO, WARN, ERROR, FATAL\n");
-    }
-    if(level !== LogLevel.INFO) {
-        Logger.info("Using log level: " + level.name);
-    }
-    Logger.getDefault().setMinLevel(level);
-    
-    const G = options.G.toUpperCase();
-    if(!gens.includes(G)) {
-        Logger.error(`Invalid -G option "${G}", allowed values are: ${gens.join(", ")}`);
-        process.exit(1);
-    }
-    const gen = G === "ALL" ? ["TS", "SQL"] : [G];
-
-    fs.readdir(sourcedir, (err, files) => {
-        if(err){
-            printer.color("red").write(err).flush();
-        }else{
-            // Show migrations
-            files = files.filter(f => f.endsWith(".json")).sort();
-            if(files.length == 0){
-                printer.color("red").write("Error: No migration files found!").flush();
-                return;
-            }
-            printer.color("green").write(`Found ${files.length} migration files:`).flush();
-            printer.color("blue").style("bright");
-            for(const file of files){
-                printer.write(file).endl();
-            }
-            printer.flush();
-
-            // Pick migration
-            let source;
-            if(version == "latest"){
-                source = files[files.length-1];
-                printer.color("green").write(`Using latest migration: ${source}`).flush();
-            }else if(version == "first"){
-                source = files[0];
-                printer.color("green").write(`Using first migration: ${source}`).flush();
-            }else{
-                source = version + ".json";
-                if(!files.includes(source)){
-                    printer.color("red").write(`Error: migration "${source}" not found!`).flush();
-                    return;
-                }
-                printer.color("green").write(`Using specified migration: ${source}`).flush();
-            }
-
-            // Establish DB connection
-            const pool = gens.includes("SQL") ? new pg.Pool({
-                host: options.H,
-                port: parseInt(options.p),
-                user: options.U,
-                password: options.P,
-                database: options.N
-            }) : undefined;
-
-            // Start scaffolding
-            const json = readJSON(path.join(sourcedir, source));
-            const schema = new Schema(source, json, pool);
-            (async () => {
-                if(gens.includes("SQL")) {
-                    await schema.install().execute();
-                }
-                if(gens.includes("TS")) {
-                    await schema.typescript().execute();
-                }
-            })();
-        }
-    });
+process.on("unhandledRejection", (reason) => {
+    Logger.fatal(reason instanceof Error ? reason : new Error(String(reason)));
+    process.exit(1);
 });
 
-program.parse();
+process.on("uncaughtException", (error) => {
+    Logger.fatal(error);
+    process.exit(1);
+});
+
+MagicCLI.run();
