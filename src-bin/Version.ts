@@ -255,16 +255,17 @@ export class Version {
             new Task("SQL Install from scratch v"+this.version)
             .addStep("Create SQL Tables", () => this.queryEachTable((name, table) => [
                 `CREATE TABLE ${this.schema}.${name} (`,
-                Object.entries(table.columns).map(([k, v]) => `    ${k} ${v}`).join(',\n'),
+                Object.entries(table.columns).map(
+                    ([k, v]) => `    ${k} ${v}`
+                ).join(',\n'),
                 `);`
             ]))
             .addStep("Create SQL Constraints", () => this.queryEachTable((name, table) => [
-                ...Object.entries(table.fks).map(([n, fk]) => [
-                    `ALTER TABLE ${this.schema}.${name}`,
-                    `ADD CONSTRAINT ${fk.name}`,
-                    `FOREIGN KEY (${fk.column})`,
-                    `REFERENCES ${fk.table}(uuid)`
-                ].join('\n'))
+                `ALTER TABLE ${this.schema}.${name}`,
+                Object.values(table.fks).map(
+                    fk => `    ADD CONSTRAINT ${fk.name} FOREIGN KEY (${fk.column}) REFERENCES ${fk.table}(uuid)`
+                ).join(',\n'),
+                `;`
             ]))
         );
     }
@@ -467,7 +468,13 @@ export class Version {
     private async query(query: string[]) {
         const str = query.join('\n');
         Logger.debug(str);
-        await this.pool?.query(str);
+        let success = false;
+        try {
+            await this.pool?.query(str);
+            success = true;
+        } finally {
+            if(!success) Logger.error(str);
+        }
     }
 
     private getBooleans(model: Model) {
