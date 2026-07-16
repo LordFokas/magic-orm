@@ -173,10 +173,9 @@ class MagicCLI {
     }
 
     private static makeNuke() {
-        const cmd = this.program.command("nuke").description("Drop and recreate the schema");
+        const cmd = this.program.command("nuke").description("Drop every table in the schema");
 
         this.addOptions(cmd, "db", "log", "waiver")
-        .option("--grant <users...>", "users to GRANT ALL ON SCHEMA to", "postgres")
         .action(async (options) => {
             this.setLogLevel(options.L);
 
@@ -186,11 +185,15 @@ class MagicCLI {
                     `on ${options.H}:${options.p}`,
                     `in database ${options.N}`
                 ));
-                const users = Array.isArray(options.grant) ? options.grant as string[] : [ options.grant as string ];
                 await db.query([
-                    `DROP SCHEMA ${options.S} CASCADE;`,
-                    `CREATE SCHEMA ${options.S};`,
-                    ...users.map(user => `GRANT ALL ON SCHEMA ${options.S} TO ${user};`)
+                    `DO $$`,
+                    `DECLARE`, 
+                    `    r RECORD;`,
+                    `BEGIN` ,
+                    `    FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = '${options.S}') LOOP `,
+                    `        EXECUTE 'DROP TABLE IF EXISTS ${options.S}.' || quote_ident(r.tablename) || ' CASCADE'; `,
+                    `    END LOOP; `,
+                    `END $$;`
                 ].join('\n'));
             });
         });
