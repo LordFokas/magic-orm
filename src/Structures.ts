@@ -13,17 +13,28 @@ export interface EntitySerializer {
 
 
 // Entity Configuration
-export interface EntityConfig {
+interface BaseConfig {
     prefix: NS
     table: string
     uuidsize: UUIDSize
     booleans?: string[]
     order?: string[]
     fields: TableFields
-	chain?: Record<string, string>
-	inherits?: ForeignKey
 	parents: Record<string, Relationship>
 	children: Record<string, Relationship>
+}
+
+export type EntityConfig =  BaseConfig & Partial<InheritanceConfig>;
+
+export interface InheritanceConfig {
+	chain: Record<string, string>
+	inherits: ForeignKey
+}
+
+export type SubtypeConfig = BaseConfig & InheritanceConfig;
+
+export interface Subtype {
+	$config: SubtypeConfig
 }
 
 export type TableFields = { "*": string[] } & Record<string, string[]>;

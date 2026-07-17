@@ -5,8 +5,8 @@ import { Logger } from '@lordfokas/loggamus';
 
 import { type Connection } from './DB.js';
 import { SelectBuilder, UpdateBuilder, type Filter } from './QueryBuilder.js';
-import { Class, NS, UUID, SkipUUID, NamespacedUUID, EntityConfig, Primitive, TableFields } from './Structures.js';
-import { Serializer } from './Serializer.js';
+import { Class, NS, UUID, SkipUUID, NamespacedUUID, EntityConfig, Primitive, TableFields, Subtype, SubtypeConfig } from './Structures.js';
+import { EntityMapper } from './EntityMapper.js';
 import { ORMError } from './ORMError.js';
 
 let $logger:Logger = Logger.getDefault();
@@ -21,7 +21,7 @@ type EClass<T> = typeof Entity & Class<T>
 export type FieldSet<T extends typeof Entity> = keyof (T["$config"]["fields"]) & keyof TableFields;
 
 export class Entity {
-    static readonly Serializer = Serializer;
+    static readonly Serializer = EntityMapper;
 	private static $fields?: string[] = undefined;
 	private static $parents?: string[] = undefined;
 	private static $children?: string[] = undefined;
@@ -31,36 +31,6 @@ export class Entity {
     uuid?: UUID<NS>;
 
     // #region Static Primitive Shortcuts // ======================================================
-	/**
-	 * Get one entity from this table, by UUID.
-	 * @deprecated use `Entity.by_uuid`
-	 */  //TODO: remove deprecated method in v5
-	static async uuid <K extends NS, T extends NamespacedUUID<K>, C extends EClass<T>, I extends InstanceType<C>>
-	(this:C, db:Connection, uuid:UUID<K>, select:FieldSet<C>='*') : Promise<I[]> {
-		$logger.forceStackTrace(true).warn("Detected usage of deprecated method Entity.uuid");
-		return this.by_uuid(db, uuid, select);
-	}
-
-	/** 
-	 * Get all the entities from this table
-	 * @deprecated use `Entity.fetch_all`
-	 */  //TODO: remove deprecated method in v5
-	static async all <K extends NS, T extends NamespacedUUID<K>, C extends EClass<T>, I extends InstanceType<C>>
-	(this:C, db:Connection, select:FieldSet<C>='*') : Promise<I[]> {
-		$logger.forceStackTrace(true).warn("Detected usage of deprecated method Entity.all");
-		return this.fetch_all(db, select);
-	}
-
-	/**
-	 * Get all entities from this table where {field} is in {list}.
-	 * @deprecated use `Entity.in_list`
-	 */  //TODO: remove deprecated method in v5
-	static async in <K extends NS, T extends NamespacedUUID<K>, C extends EClass<T>, I extends InstanceType<C>>
-	(this:C, db:Connection, field:string, list:Primitive[], select:FieldSet<C>='*') : Promise<I[]> {
-		$logger.forceStackTrace(true).warn("Detected usage of deprecated method Entity.in");
-		return this.in_list(db, field, list, select);
-	}
-
 	/** Get one entity from this table, by UUID. */
 	static async by_uuid <K extends NS, T extends NamespacedUUID<K>, C extends EClass<T>, I extends InstanceType<C>>
 	(this:C, db:Connection, uuid:UUID<K>, select:FieldSet<C>='*') : Promise<I[]> {
@@ -142,17 +112,17 @@ export class Entity {
 	}
 
 	/** Update one or more database rows with the data contained in this Entity */
-	static async update<C extends EClass<any>>(this:C, db:Connection, entity:InstanceType<C>, update:FieldSet<C> = '*', filters:Filter[] = []) : Promise<any> {
+	static async update<C extends typeof Entity>(this:C, db:Connection, entity:InstanceType<C>, update:FieldSet<C> = '*', filters:Filter[] = []) : Promise<any> {
 		if(filters.length < 1) throw new ORMError.InvalidArgument('Cannot update table with no filters');
 		
 		// handle polymorphic updates
 		if(this.isSubtype()){
 			// determine tables to update
 			let models = [] as { model:EClass<any>, data:any, fields:string[] }[];
-			let model:EClass<any> = this;
+			let model:EClass<C> = this as any;
 			let data = entity;
-			do { // @ts-ignore FIXME: this is a fucky-wucky. How to solve?
-				const fields = model.getFields(data, update, true).filter(f => f != 'uuid');
+			do {
+				const fields = this.getFields(data, update, true).filter(f => f != 'uuid');
 				if(fields.length > 0) {
 					models.push({
 						model: model,
@@ -160,8 +130,9 @@ export class Entity {
 						fields: fields
 					});
 				}
-				if(model.isSubtype()){ 
-					update = model.$config.chain[update] as any;
+				if(model.isSubtype()){
+					const chain = model.$config.chain;
+					update = chain ? chain[update] : false as any;
 					if(!update) break;
 					model = model.getSupertype();
 					data = new model(data);
@@ -183,7 +154,6 @@ export class Entity {
 					}
 				}, `MULTI-UPDATE ${models.map(m => m.model.$config.prefix).join(" -> ")}`);
 			} else if(models.length == 1) {
-				// @ts-ignore FIXME: this is a fucky-wucky. How to solve?
 				return await models[0].model.do_update(db, models[0].data, models[0].fields, filters);
 			}
 			throw new ORMError.InvalidState("Cannot update table with no columns to change");
@@ -219,9 +189,10 @@ export class Entity {
 		if(order) query.order(this.COL(order));
 
 		// Join table we inherit from if the fieldset generates any other joins
-		if(this.isSubtype() && this.$config.chain[select]) {
-			const parent = await this.getSupertype().read_parent(this.$config.prefix, this.$config.chain[select] as any, filters);
-			if(parent) query.join(parent, this.$config.inherits);
+		const $subtype = this.asSubtype();
+		if($subtype && $subtype.chain[select]) {
+			const parent = this.getSupertype().read_parent($subtype.prefix, $subtype.chain[select] as any, filters);
+			if(parent) query.join(parent, $subtype.inherits);
 		}
 
 		if(db === false) return query;
@@ -230,30 +201,31 @@ export class Entity {
 	}
 
 	/** Create queries for table inheritance. */
-	private static async read_parent<C extends EClass<any>>(this:C, prefix:string, select?:FieldSet<C>, filters?:Filter[]) : Promise<SelectBuilder>{
+	private static read_parent<C extends EClass<any>>(this:C, prefix:string, select:FieldSet<C>, filters:Filter[]) : SelectBuilder | undefined {
 		const own = this.$config.fields["*"];
 		const local = filters.filter(f => own.includes(f.col));
 		filters = filters.filter(f => !local.includes(f));
 		
-		if(!this.isSubtype() && filters.length > 0){
-			throw new ORMError.InvalidState(`Column(s) ${filters.map(f => "'"+f.col+"'").join(', ')} not found in table ${this.$config.table}`);
+		const $subtype = this.asSubtype();
+		if(!$subtype && filters.length > 0){ // We reached the root of the tree but there are still filters left to apply
+			throw new ORMError.InvalidArgument(`Column(s) ${filters.map(f => "'"+f.col+"'").join(', ')} not found in table ${this.$config.table}`);
 		}
 
 		let fields = this.$config.fields[select] as string[];
-		let query:SelectBuilder;
+		let query: SelectBuilder | undefined;
 		if(fields) { // only generate a query for joining this table if the fieldset exists
 			fields = fields.filter(f => f != 'uuid');
 			query = new SelectBuilder(this, this.ALIAS(fields, this.$config.prefix, prefix)).filter(local, this);
 		}
 	
 		// Join table we inherit from if the fieldset generates any other joins
-		if(this.isSubtype() && this.$config.chain[select]) {
-			const parent = await this.getSupertype().read_parent(this.$config.prefix, this.$config.chain[select] as any, filters);
+		if($subtype && $subtype.chain[select]) {
+			const parent = this.getSupertype().read_parent($subtype.prefix, $subtype.chain[select] as any, filters);
 			if(!query) return parent; // if we're not adding ourselves, return parent directly
-			if(parent) query.join(parent, this.$config.inherits); // only join if we have fields from parent and ourselves
+			if(parent) query.join(parent, $subtype.inherits); // only join if we have fields from parent and ourselves
 		}
 
-		if(!query) $logger.warn(`Inefficient query at ${this.name}/{select} - Use an unset chain instead`);
+		if(!query) $logger.warn(`Inefficient query at ${this.name}/${select} - Use an unset chain instead`);
 		return query; // our table if it was selected, joined with parent if also selected, or undefined if subtype and not selected
 	}
 
@@ -268,8 +240,12 @@ export class Entity {
 		return typeof this.$config.inherits === "object";
 	}
 
+	static asSubtype() {
+		return typeof this.$config.inherits === "object" ? this.$config as SubtypeConfig : undefined;
+	}
+
 	static getSupertype() {
-		return Serializer.lookup(this.$config.inherits.parentClass) as EClass<any>;
+		return EntityMapper.lookup(this.$config.inherits?.parentClass as string) as EClass<any>;
 	}
 
 	static getFields<C extends EClass<any>>(this:C, entity:InstanceType<C>, fields:FieldSet<C> = '*', allowNull:boolean = false){
@@ -299,6 +275,9 @@ export class Entity {
 	constructor(obj?:object){
 		if(obj){ Object.assign(this, obj); }
 	}
+
+	/** Shortcut to get the class config from an instance */
+    private get $config(){ return (this.constructor as unknown as Record<string, EntityConfig>)["$config"]; }
 
 	/** 
 	 * Build an Entity from a database row.
@@ -362,8 +341,7 @@ export class Entity {
 	async update<C extends typeof Entity>(this:InstanceType<C>, db:Connection, fields:FieldSet<C> = '*') : Promise<any> {
 		if(!this.uuid) throw new ORMError.InvalidState('Update failed: Entity doesn\'t contain a UUID');
 
-		return await (this.constructor as C)
-            .update(db, this, fields, [{ col: 'uuid', var: this.uuid }]);
+		return await (this.constructor as C).update(db, this, fields, [{ col: 'uuid', var: this.uuid }]);
 	}
 
 	/** Upserts (update or insert) this Entity, depending on wether or not this object has a UUID. */
@@ -425,24 +403,24 @@ export class Entity {
     // #region Serialization // ===================================================================
     /** Transforms a JSON structure into concrete entities */
 	static fromJSON<T extends Entity>(this:EClass<T>, data:string) : T {
-		const result = Serializer.fromJSON<T>(data);
+		const result = EntityMapper.fromJSON<T>(data);
 		return this.$enforceOwnType(result, "Root");
 	}
 
 	/** Transforms an object into concrete entities */
 	static fromObject<T extends Entity>(this:EClass<T>, data:object) : T {
-		const result = Serializer.fromObject<T>(data);
+		const result = EntityMapper.fromObject<T>(data);
 		return this.$enforceOwnType(result, "Root");
 	}
 
 	/** Validate that a type has a correct structure */
 	protected static $enforceOwnType<T extends Entity>(this:EClass<T>, obj:T, path: string) : T {
-		const name = Serializer.name_of(this);
+		const name = EntityMapper.name_of(this);
 		if(!(obj instanceof Entity)){
 			throw new ORMError.InvalidFormat(path + " is not a recognized model, expected " + name);
 		}
 		if(obj.constructor !== this){
-			const instead = Serializer.name_of(obj.constructor as EClass<any>);
+			const instead = EntityMapper.name_of(obj.constructor as EClass<any>);
 			throw new ORMError.InvalidFormat(`${path} type mismatch: expected ${name} but got ${instead}`);
 		}
 		const allowed = this.$getAll();
@@ -454,7 +432,7 @@ export class Entity {
 			const value: any = obj[k];
 			if(value === undefined) return;
 			const p_name = this.$config.parents[k].parentClass;
-			const parent = Serializer.lookup(p_name) as EClass<any>;
+			const parent = EntityMapper.lookup(p_name) as EClass<any>;
 			parent.$enforceOwnType(value, path+"."+k);
 		});
 		this.$getChildren().forEach(k => {
@@ -465,14 +443,14 @@ export class Entity {
 			if(!Array.isArray(value)) {
 				throw new ORMError.InvalidFormat(`${p}: expected ${c_name}[], found ${value === null ? 'null' : typeof value}`);
 			}
-			const child = Serializer.lookup(c_name) as EClass<any>;
+			const child = EntityMapper.lookup(c_name) as EClass<any>;
 			let error = false;
 			const types = [];
 			for(const v of value) {
 				if(v instanceof child) {
 					types.push(c_name);
 				} else if(v instanceof Entity){
-					types.push(Serializer.name_of(v.constructor as EClass<any>));
+					types.push(EntityMapper.name_of(v.constructor as EClass<any>));
 					error = true;
 				} else {
 					types.push(v === null ? 'null' : typeof v);
@@ -530,7 +508,4 @@ export class Entity {
 		return this.$all;
 	}
     // #endregion
-
-    /** Shortcut to get the class config from an instance */
-    private get $config(){ return (this.constructor as unknown as Record<string, EntityConfig>)["$config"]; }
 }

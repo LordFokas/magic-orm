@@ -1,7 +1,7 @@
 {
   "name": "@lordfokas/magic-orm",
   "type": "module",
-  "version": "4.1.0-alpha.6",
+  "version": "5.0.0-alpha.0",
   "author": "LordFokas",
   "license": "MIT",
   "description": "A class-based ORM in TypeScript. Unorthodox and extremely opinionated, made to fit my specific use cases.",
@@ -33,7 +33,7 @@
     "@types/pg-pool": "^2.0.6",
     "@types/semver": "^7.7.1",
     "@types/uuid": "^9.0.7",
-    "typescript": "^5.8.3"
+    "typescript": "^7.0.2"
   },
   "dependencies": {
     "@lordfokas/loggamus": "^2.0.1",

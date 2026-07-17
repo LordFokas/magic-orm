@@ -12,7 +12,7 @@ export {
     type EntityConfig, type Relationship as Relation
 } from './Structures.js';
 
-export { Serializer } from './Serializer.js';
+export { EntityMapper } from './EntityMapper.js';
 
 export { Entity, FieldSet } from './Entity.js';
 

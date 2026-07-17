@@ -3,6 +3,7 @@ import util from 'node:util';
 import Pool from 'pg-pool';
 import { QueryArrayResult, type Client, type PoolClient } from 'pg';
 import { Logger, LogLevel, PrettyPrinter, Pipe, type Color, type Options } from '@lordfokas/loggamus';
+import { ORMError } from './ORMError.js';
 
 
 const DBCONN  = new LogLevel("DBCONN" , 35);
@@ -29,7 +30,7 @@ class DBPipe extends Pipe {
 	usesPretty(){ return true; }
 
 	write(pretty:string, raw:string|object, meta:object){
-		$logger.log(pretty, DBQUERY);
+		$logger.log(pretty, DBQUERY, meta);
 	}
 }
 
@@ -161,7 +162,7 @@ export class Connection {
 	}
 
 	/** Opens a new query containment level (table lock, transaction, etc) */
-	#open = function open(sql: string, operation: string) : Promise<void> {
+	#open = function open(this:Connection, sql: string, operation: string) : Promise<void> | void {
 		pretty.reset();
 		if(this.#containers > 0) {
 			pretty.color('red').write("║ ");
@@ -176,7 +177,7 @@ export class Connection {
 	}
 
 	/** Closes top query containment level (table lock, transaction, etc) */
-	#close = function close(sql: string) : Promise<void> {
+	#close = function close(this:Connection, sql: string) : Promise<void> | void {
 		pretty.reset();
 		if(this.#containers > 1) {
 			pretty.color('red').write("║ ");
@@ -190,11 +191,11 @@ export class Connection {
 		return;
 	}
 
-	#query = function query(sql:string, values?:any[]) : Promise<any> {
+	#query = function query(this:Connection, sql:string, values?:any[]) : Promise<any> {
 		if(this.#conn){
 			return this.#conn.query(sql, values);
 		}else{
-			throw new Error("Query failed because connection is no longer available");
+			throw new ORMError.InvalidState("Query failed because connection is no longer available");
 		}
 	}
 
@@ -231,7 +232,7 @@ class DBUtil {
 		if(values)
 			for(const idx in values){
 				var v = values[idx];
-				if(v === undefined) throw new Error("UNDEFINED value in prepared array index #" + idx);
+				if(v === undefined) throw new ORMError.InvalidArgument("UNDEFINED value in prepared array index #" + idx);
 				else if(v === true) values[idx] = 1;
 				else if(v === false) values[idx] = 0;
 			}
@@ -250,7 +251,7 @@ class DBUtil {
 		const glen = params.length;
 		if(glen !== plen){ // Enforce same number of placeholders and parameters.
 			$logger.warn(sql);
-			throw new Error(
+			throw new ORMError.InvalidArgument(
 				`Invalid Parameterization: Expected ${plen}, given ${glen} => `
 				+ util.inspect(params)
 			);
@@ -271,7 +272,7 @@ class DBUtil {
 			if(containers > 1) pretty.color('black').write("║ ".repeat(containers - 1));
 		}
 		while(query.length > 0){
-			const str = query.shift();
+			const str = query.shift() as string;
 			if(containers > 0 && str.includes("\n")) {
 				const lines = str.split("\n");
 				pretty.color(sqlc).write(lines.shift());
