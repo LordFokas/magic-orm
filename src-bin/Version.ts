@@ -266,7 +266,7 @@ export class Version {
                     fk => `    ADD CONSTRAINT ${fk.name} FOREIGN KEY (${fk.column}) REFERENCES ${fk.table}(uuid)`
                 ).join(',\n'),
                 `;`
-            ]))
+            ], t => Object.keys(t.fks).length > 0))
         );
     }
 
@@ -458,10 +458,12 @@ export class Version {
         }
     }
 
-    private async queryEachTable(fn: (name: string, table: Table) => string[]) {
+    private async queryEachTable(fn: (name: string, table: Table) => string[], check: (t: Table) => boolean = $ => true) {
         for(const name in this.tables){
             const table = this.tables[name];
-            await this.query(fn(name, table));
+            if(check(table)) {
+                await this.query(fn(name, table));
+            }
         }
     }
 

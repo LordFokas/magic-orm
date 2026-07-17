@@ -147,8 +147,8 @@ class MagicCLI {
                 const json = this.readJSON(path.join(sourcedir, selected + ".json"));
                 const version = new Version(selected, options.S, json, db);
 
-                const task =new Task("Install v"+selected)
-                .addSubtask(version.install())
+                const task = new Task("Install v"+selected)
+                .addSubtask(version.install().atomic(db))
                 .addStep("Update magic-orm metadata", () => this.setCurrentVersion(db as pg.Pool, options.S, selected))
                 .addSubtask(version.typescript());
 
@@ -180,7 +180,7 @@ class MagicCLI {
                     `in database ${options.N}`
                 ));
 
-                await current.drop_all().execute();
+                await current.drop_all().atomic(db).execute();
             });
         });
     }
@@ -208,7 +208,7 @@ class MagicCLI {
                     `in database ${options.N}`
                 ));
 
-                await current.truncate().execute();
+                await current.truncate().atomic(db).execute();
             });
         });
     }
