@@ -81,9 +81,9 @@ class MagicCLI {
                     Logger.warn(`No metadata records in ${options.S}.${this.METADATA}`);
                 } else {
                     Logger.info("Database metadata:  [" + result.rowCount + "]")
-                    for(const {k, v} of result.rows) {
-                        if(k === "version") version = v;
-                        Logger.info(`- ${k}: ${v}`);
+                    for(const {property, value} of result.rows) {
+                        if(property === "version") version = value;
+                        Logger.info(`- ${property}: ${value}`);
                     }
                 }
                 Logger.info("");
