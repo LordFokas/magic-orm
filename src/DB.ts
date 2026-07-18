@@ -104,9 +104,9 @@ export class Connection {
 
 		DBUtil.validate(sql, values, this.#containers);
 		sql = DBUtil.pgps(sql); // convert ? to $x
-		const start:number = Date.now();
+		const start:number = performance.now();
 		const result:QueryArrayResult = await this.#query(sql, DBUtil.patch(values));
-		const elapsed:number = Date.now() - start;
+		const elapsed:number = performance.now() - start;
 
 		if(this.#containers > 0) {
 			pretty.style('reset').color('red').write("║ ").style('bright');
