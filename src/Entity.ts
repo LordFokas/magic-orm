@@ -5,8 +5,8 @@ import { Logger } from '@lordfokas/loggamus';
 
 import { type Connection } from './DB.js';
 import { SelectBuilder, UpdateBuilder, type Filter } from './QueryBuilder.js';
-import { Class, NS, UUID, SkipUUID, NamespacedUUID, EntityConfig, Primitive, TableFields, Subtype, SubtypeConfig } from './Structures.js';
-import { EntityMapper } from './EntityMapper.js';
+import { Class, NS, UUID, SkipUUID, NamespacedUUID, EntityConfig, Primitive, TableFields, SubtypeConfig } from './Structures.js';
+import { EntityMapper, Validator, TransformerValidator, TransformableValidator, LinkValidators } from './EntityMapper.js';
 import { ORMError } from './ORMError.js';
 
 let $logger:Logger = Logger.getDefault();
@@ -19,6 +19,8 @@ export function useLogger(logger:Logger) : void {
 type EClass<T> = typeof Entity & Class<T>
 
 export type FieldSet<T extends typeof Entity> = keyof (T["$config"]["fields"]) & keyof TableFields;
+export type ParentOf<T extends typeof Entity> = keyof (T["$config"]["parents"]);
+export type ChildOf<T extends typeof Entity> = keyof (T["$config"]["children"]);
 
 export class Entity {
     static readonly Serializer = EntityMapper;
@@ -147,7 +149,16 @@ export class Entity {
 
 				// temporary limitation, won't implement feature until needed
 				if(!uuid) throw new ORMError("Unsupported: Cannot currently do MULTI-UPDATE except via uuid filters");
-
+type Validator<T> = (obj:any, path: string, errors: string[]) => any
+type RootValidator<T> = (obj:any) => T;
+type RootableValidator<T> = Validator<T> & {
+	/**
+	 * Turns this validator into the root of the validator tree.
+	 * 
+	 * It performs additional tasks and is required at the root level for proper functioning of the validation structure.
+	 */
+	$$: () => RootValidator<T>
+}
 				return await db.atomic(async () => {
 					for(const entry of models) {
 						await entry.model.do_update(db, entry.data, entry.fields, filters);
@@ -258,7 +269,16 @@ export class Entity {
 	protected static beforeCreate<C extends EClass<any>>(this:C, ...entity:InstanceType<C>[]){}
 
 	/** Convert boolean fields from string '0' and '1' to primitive false and true. */
-	static #booleans(entity:Entity) : void {
+	static #booleans(entity:Entity) : void {type Validator<T> = (obj:any, path: string, errors: string[]) => any
+type RootValidator<T> = (obj:any) => T;
+type RootableValidator<T> = Validator<T> & {
+	/**
+	 * Turns this validator into the root of the validator tree.
+	 * 
+	 * It performs additional tasks and is required at the root level for proper functioning of the validation structure.
+	 */
+	$$: () => RootValidator<T>
+}
         const booleans = entity.$config.booleans;
 		if(Array.isArray(booleans)){
 			for(const key of booleans){
@@ -400,112 +420,119 @@ export class Entity {
 	}
     // #endregion
 
-    // #region Serialization // ===================================================================
-    /** Transforms a JSON structure into concrete entities */
-	static fromJSON<T extends Entity>(this:EClass<T>, data:string) : T {
-		const result = EntityMapper.fromJSON<T>(data);
-		return this.$enforceOwnType(result, "Root");
+	// #region Validators // ======================================================================
+	private static $typeof(value: any) {
+		if(value === null) return "null";
+		if(value instanceof Entity) return EntityMapper.name_of(value.constructor as EClass<any>);
+		return typeof value;
 	}
 
-	/** Transforms an object into concrete entities */
-	static fromObject<T extends Entity>(this:EClass<T>, data:object) : T {
-		const result = EntityMapper.fromObject<T>(data);
-		return this.$enforceOwnType(result, "Root");
-	}
-
-	/** Validate that a type has a correct structure */
-	protected static $enforceOwnType<T extends Entity>(this:EClass<T>, obj:T, path: string) : T {
-		const name = EntityMapper.name_of(this);
-		if(!(obj instanceof Entity)){
-			throw new ORMError.InvalidFormat(path + " is not a recognized model, expected " + name);
+	private static array_of(obj: any, path: string, errors: string[], name: string, fn: Validator) {
+		if(!Array.isArray(obj)) {
+			return errors.push(`${path}: expected ${name}[], found ${this.$typeof(obj)} instead`);
 		}
-		if(obj.constructor !== this){
-			const instead = EntityMapper.name_of(obj.constructor as EClass<any>);
-			throw new ORMError.InvalidFormat(`${path} type mismatch: expected ${name} but got ${instead}`);
-		}
-		const allowed = this.$getAll();
-		const failed = Object.keys(obj).filter(k => !allowed.includes(k));
-		if(failed.length > 0) {
-			throw new ORMError.InvalidFormat(`${path}: field(s) '${failed.join("', '")}' not allowed in ${name}`)
-		}
-		this.$getParents().forEach(k => {
-			const value: any = obj[k];
-			if(value === undefined) return;
-			const p_name = this.$config.parents[k].parentClass;
-			const parent = EntityMapper.lookup(p_name) as EClass<any>;
-			parent.$enforceOwnType(value, path+"."+k);
+		let invalid = false;
+		let types = [] as string[];
+		obj.forEach(v => {
+			if(v?.constructor === this) {
+				types.push(name);
+			} else {
+				types.push(this.$typeof(v));
+				invalid = true;
+			}
 		});
-		this.$getChildren().forEach(k => {
-			const value: any = obj[k];
-			if(value === undefined) return;
-			const p = path+"."+k;
-			const c_name = this.$config.children[k].childClass;
-			if(!Array.isArray(value)) {
-				throw new ORMError.InvalidFormat(`${p}: expected ${c_name}[], found ${value === null ? 'null' : typeof value}`);
-			}
-			const child = EntityMapper.lookup(c_name) as EClass<any>;
-			let error = false;
-			const types = [];
-			for(const v of value) {
-				if(v instanceof child) {
-					types.push(c_name);
-				} else if(v instanceof Entity){
-					types.push(EntityMapper.name_of(v.constructor as EClass<any>));
-					error = true;
-				} else {
-					types.push(v === null ? 'null' : typeof v);
-					error = true;
+		if(invalid) {
+			return errors.push(`${path}: expected ${name}[], found [${types.join(', ')}]`);
+		}
+		obj.forEach((v, i) => fn(v, `${path}[${i}]`, errors));
+	}
+
+	private static as_transformable<C extends typeof Entity, T extends InstanceType<C>> (this:EClass<T>, fn: Validator) : TransformableValidator<T> {
+		return Object.assign(fn, {
+			transform: () => {
+				return ((obj: any) => {
+					obj = EntityMapper.fromObject(obj);
+					const start = performance.now();
+					const errors = [] as string[];
+					fn(obj, "Root", errors);
+					const elapsed = performance.now() - start;
+					$logger.debug(`Performed payload model validation in ${elapsed}ms`);
+					if(errors.length > 0) {
+						throw new ORMError.InvalidFormat(errors.join('\n'));
+					}
+					return obj;
 				}
+			) as TransformerValidator<T>;
+		}});
+	}
+
+	static flat<C extends typeof Entity, T extends InstanceType<C>> (this:EClass<T>, fields: FieldSet<C>) : TransformableValidator<T> {
+		const name = EntityMapper.name_of(this);
+		const allowed = this.$config.fields[fields];
+		if(!allowed) throw new ORMError.InvalidArgument(`FieldSet not found: ${name}/${fields}`);
+
+		return this.as_transformable((obj: any, path: string, errors: string[]) => {
+			if(!(obj instanceof Entity)){
+				const instead = this.$typeof(obj);
+				return errors.push(`${path} is not a valid model: expected ${name}, found ${instead}`);
 			}
-			if(error) {
-				throw new ORMError.InvalidFormat(`${p}: expected ${c_name}[], found [${types.join(', ')}]`);
+			if(obj.constructor !== this){
+				const instead = EntityMapper.name_of(obj.constructor as EClass<any>);
+				return errors.push(`${path} type mismatch: expected ${name}, found ${instead}`);
 			}
-			value.forEach((v, i) => {
-				child.$enforceOwnType(v, `${p}[${i}]`);
+			const failed = Object.keys(obj).filter(k => !allowed.includes(k));
+			if(failed.length > 0) {
+				return errors.push(`${path}: field(s) '${failed.join("', '")}' not allowed in ${name}`);
+			}
+		});
+	}
+
+	static flat_array<C extends typeof Entity, T extends InstanceType<C>> (this:EClass<T>, fields: FieldSet<C>) : TransformableValidator<T> {
+		const name = EntityMapper.name_of(this);
+		const flat = this.flat(fields);
+
+		return this.as_transformable((obj: any, path: string, errors: string[]) => {
+			this.array_of(obj, path, errors, name, flat);
+		});
+	}
+
+	static nested<C extends typeof Entity, T extends InstanceType<C>> (this:EClass<T>, fields: FieldSet<C>, link: LinkValidators<C>) : TransformableValidator<T> {
+		const name = EntityMapper.name_of(this);
+		const flats = this.$config.fields[fields];
+		if(!flats) throw new ORMError.InvalidArgument(`FieldSet not found: ${name}/${fields}`);
+		const links = Object.keys(link);
+		if(links.length == 0) throw new ORMError.InvalidArgument(`No links defined for ${name}`);
+		const allowed = [ ...flats, ...links ];
+
+		return this.as_transformable((obj: any, path: string, errors: string[]) => {
+			if(!(obj instanceof Entity)){
+				const instead = this.$typeof(obj);
+				return errors.push(`${path} is not a valid model: expected ${name}, found ${instead}`);
+			}
+			if(obj.constructor !== this){
+				const instead = EntityMapper.name_of(obj.constructor as EClass<any>);
+				return errors.push(`${path} type mismatch: expected ${name}, found ${instead}`);
+			}
+			const failed = Object.keys(obj).filter(k => !allowed.includes(k));
+			if(failed.length > 0) {
+				errors.push(`${path}: field(s) '${failed.join("', '")}' not allowed in ${name}`);
+			}
+			Object.entries(link).forEach(([n, v]) => {
+				const value = (obj as Record<string, any>)[n];
+				if(value !== undefined) {
+					v(value, `${path}.${n}`, errors);
+				}
 			});
 		});
-		return obj;
 	}
 
-	protected static $getFields<T extends Entity>(this:EClass<T>) : string[] {
-		if(this.$fields === undefined) {
-			this.$fields = [...this.$config.fields['*']];
-			if(this.isSubtype()) {
-				this.$fields.push(...this.getSupertype().$getFields().filter(f => f !== 'uuid'));
-			}
-		}
-		return this.$fields;
-	}
+	static nested_array<C extends typeof Entity, T extends InstanceType<C>> (this:EClass<T>, fields: FieldSet<C>, link: LinkValidators<C>) : TransformableValidator<T> {
+		const name = EntityMapper.name_of(this);
+		const nested = this.nested(fields, link);
 
-	protected static $getParents<T extends Entity>(this:EClass<T>) : string[] {
-		if(this.$parents === undefined) {
-			this.$parents = [...Object.keys(this.$config.parents)];
-			if(this.isSubtype()) {
-				this.$parents.push(...this.getSupertype().$getParents());
-			}
-		}
-		return this.$parents;
+		return this.as_transformable((obj: any, path: string, errors: string[]) => {
+			this.array_of(obj, path, errors, name, nested);
+		});
 	}
-
-	protected static $getChildren<T extends Entity>(this:EClass<T>) : string[] {
-		if(this.$children === undefined) {
-			this.$children = [...Object.keys(this.$config.children)];
-			if(this.isSubtype()) {
-				this.$children.push(...this.getSupertype().$getChildren());
-			}
-		}
-		return this.$children;
-	}
-
-	protected static $getAll<T extends Entity>(this:EClass<T>) : string[] {
-		if(this.$all === undefined) {
-			this.$all = [
-				...this.$getFields(),
-				...this.$getParents(),
-				...this.$getChildren()
-			];
-		}
-		return this.$all;
-	}
-    // #endregion
+	// #endregion
 }

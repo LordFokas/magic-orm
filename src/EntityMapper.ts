@@ -1,7 +1,18 @@
 import { type Class } from "./Structures.js";
-import { Entity } from "./Entity.js";
+import { ChildOf, Entity, ParentOf } from "./Entity.js";
 
 interface EType { '@type': string; }
+
+export type Validator = (obj:any, path: string, errors: string[]) => void
+export type LinkValidators<T extends typeof Entity> = Record<ParentOf<T> | ChildOf<T>, Validator>;
+export type TransformerValidator<T> = (obj:any) => T;
+export type TransformableValidator<T> = Validator & {
+	/**
+	 * Turns this validator into a transformer validator, which
+	 * recursively transforms the incoming JSON into an Entity tree. 
+	 */
+	transform: () => TransformerValidator<T>
+}
 
 export class EntityMapper {
     /** Entity name to Entity Class map */

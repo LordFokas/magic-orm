@@ -4,13 +4,6 @@ export interface Class<T> { new (...$:any) : T }
 export type Member<T> = T extends (infer U)[] ? U : never;
 export type Primitive = string | number | boolean;
 
-export interface EntitySerializer {
-	fromJSON<T extends Entity>(data:string) : T
-	fromObject<T extends Entity>(data:object) : T
-	toJSON(data:Entity|Array<Entity>, pretty:boolean) : string
-	toObject(data:Entity|Array<Entity>) : object
-}
-
 
 // Entity Configuration
 interface BaseConfig {
