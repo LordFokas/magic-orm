@@ -447,24 +447,31 @@ export class Entity {
 		}});
 	}
 
+	private static validate_self(name: string, allowed: string[], obj: any, path: string, errors: string[]) {
+		if(!(obj instanceof Entity)){
+			const instead = this.$typeof(obj);
+			errors.push(`${path} is not a valid model: expected ${name}, found ${instead}`);
+			return false;
+		}
+		if(obj.constructor !== this){
+			const instead = EntityMapper.name_of(obj.constructor as EClass<any>);
+			errors.push(`${path} type mismatch: expected ${name}, found ${instead}`);
+			return false;
+		}
+		const failed = Object.keys(obj).filter(k => !allowed.includes(k));
+		if(failed.length > 0) {
+			errors.push(`${path}: field(s) '${failed.join("', '")}' not allowed in ${name}`);
+		}
+		return true;
+	}
+
 	static flat<C extends typeof Entity, T extends InstanceType<C>> (this:EClass<T>, fields: FieldSet<C>) : TransformableValidator<T> {
 		const name = EntityMapper.name_of(this);
 		const allowed = this.$config.fields[fields];
 		if(!allowed) throw new ORMError.InvalidArgument(`FieldSet not found: ${name}/${fields}`);
 
 		return this.as_transformable((obj: any, path: string, errors: string[]) => {
-			if(!(obj instanceof Entity)){
-				const instead = this.$typeof(obj);
-				return errors.push(`${path} is not a valid model: expected ${name}, found ${instead}`);
-			}
-			if(obj.constructor !== this){
-				const instead = EntityMapper.name_of(obj.constructor as EClass<any>);
-				return errors.push(`${path} type mismatch: expected ${name}, found ${instead}`);
-			}
-			const failed = Object.keys(obj).filter(k => !allowed.includes(k));
-			if(failed.length > 0) {
-				return errors.push(`${path}: field(s) '${failed.join("', '")}' not allowed in ${name}`);
-			}
+			this.validate_self(name, allowed, obj, path, errors);
 		});
 	}
 
@@ -486,18 +493,9 @@ export class Entity {
 		const allowed = [ ...flats, ...links ];
 
 		return this.as_transformable((obj: any, path: string, errors: string[]) => {
-			if(!(obj instanceof Entity)){
-				const instead = this.$typeof(obj);
-				return errors.push(`${path} is not a valid model: expected ${name}, found ${instead}`);
-			}
-			if(obj.constructor !== this){
-				const instead = EntityMapper.name_of(obj.constructor as EClass<any>);
-				return errors.push(`${path} type mismatch: expected ${name}, found ${instead}`);
-			}
-			const failed = Object.keys(obj).filter(k => !allowed.includes(k));
-			if(failed.length > 0) {
-				errors.push(`${path}: field(s) '${failed.join("', '")}' not allowed in ${name}`);
-			}
+			const safe = this.validate_self(name, allowed, obj, path, errors);
+			if(!safe) return false; // wrong structure, it is unsafe to attempt to traverse entity relations
+			
 			Object.entries(link).forEach(([n, v]) => {
 				const value = (obj as Record<string, any>)[n];
 				if(value !== undefined) {
