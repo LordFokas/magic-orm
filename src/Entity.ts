@@ -149,16 +149,6 @@ export class Entity {
 
 				// temporary limitation, won't implement feature until needed
 				if(!uuid) throw new ORMError("Unsupported: Cannot currently do MULTI-UPDATE except via uuid filters");
-type Validator<T> = (obj:any, path: string, errors: string[]) => any
-type RootValidator<T> = (obj:any) => T;
-type RootableValidator<T> = Validator<T> & {
-	/**
-	 * Turns this validator into the root of the validator tree.
-	 * 
-	 * It performs additional tasks and is required at the root level for proper functioning of the validation structure.
-	 */
-	$$: () => RootValidator<T>
-}
 				return await db.atomic(async () => {
 					for(const entry of models) {
 						await entry.model.do_update(db, entry.data, entry.fields, filters);
@@ -270,15 +260,6 @@ type RootableValidator<T> = Validator<T> & {
 
 	/** Convert boolean fields from string '0' and '1' to primitive false and true. */
 	static #booleans(entity:Entity) : void {type Validator<T> = (obj:any, path: string, errors: string[]) => any
-type RootValidator<T> = (obj:any) => T;
-type RootableValidator<T> = Validator<T> & {
-	/**
-	 * Turns this validator into the root of the validator tree.
-	 * 
-	 * It performs additional tasks and is required at the root level for proper functioning of the validation structure.
-	 */
-	$$: () => RootValidator<T>
-}
         const booleans = entity.$config.booleans;
 		if(Array.isArray(booleans)){
 			for(const key of booleans){
