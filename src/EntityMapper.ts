@@ -1,42 +1,57 @@
 import { type Class } from "./Structures.js";
-import { ChildOf, Entity, ParentOf } from "./Entity.js";
+import { Child, Entity, Parent } from "./Entity.js";
+import { ORMError } from "./ORMError.js";
 
 interface EType { '@type': string; }
 
+/** Deep validator function that adds errors to a growing list instead of throwing at the first occurrence. */
 export type Validator = (obj:any, path: string, errors: string[]) => void
-export type LinkValidators<T extends typeof Entity> = Record<ParentOf<T> | ChildOf<T>, Validator>;
+
+/** Map of validators for relationships. Used in recursive validation of nested entities. */
+export type LinkValidators<T extends typeof Entity> = Record<Parent<T> | Child<T>, Validator>;
+
+/** Root of validation tree. Checks that an input is valid and performs any transformations deemed necessary. */
 export type TransformerValidator<T> = (obj:any) => T;
+
+/**
+ * Validator instance that can itself be converted into a TransformerValidator.
+ * Default validator functions from Entity conform to this behavior.
+ */
 export type TransformableValidator<T> = Validator & {
-	/**
-	 * Turns this validator into a transformer validator, which
-	 * recursively transforms the incoming JSON into an Entity tree. 
-	 */
+	/** Turns this validator into a transformer validator. */
 	transform: () => TransformerValidator<T>
 }
 
+/**
+ * Registry of entity classes.
+ * Used for handling relationships, inheritance, and (de)serialization.
+ */
 export class EntityMapper {
     /** Entity name to Entity Class map */
     static readonly #forward:Record<string, Class<Entity>> = {};
     /** Entity Class name to Entity name map */
     static readonly #reverse:Record<string, string> = {};
 
+	/** Registers an entity to its canonical "business" name */
     static register<T extends Entity>(entity: Class<T>, name: string){
         this.#forward[name] = entity;
         this.#reverse[entity.name] = name;
     }
 
+	/** Looks up an entity class by canonical name */
 	static lookup(name: string) {
 		return this.#forward[name];
 	}
 
+	/** Gets the canonical name of an entity class */
 	static name_of<T extends Entity>(entity: Class<T>){
 		return this.#reverse[entity.name];
 	}
 
-	/** Transforms a JSON structure into concrete entities */
+	/** Transforms a JSON string into concrete entities */
 	static fromJSON<T extends Entity>(data:string) : T {
 		if(typeof data !== 'string')
-			throw new Error('Expected data type to be string');
+			throw new ORMError.InvalidArgument('Expected data type to be string');
 		return JSON.parse(data, (k, obj) => EntityMapper.#reviver(obj));
 	}
 
@@ -50,7 +65,7 @@ export class EntityMapper {
 		if(val instanceof Object && val['@type']){
 			const obj:object&EType = val;
 			const ctor = this.#forward[obj["@type"]];
-            if(!ctor) throw new Error(`Entity name "${obj["@type"]}" not recognized`);
+            if(!ctor) throw new ORMError.InvalidFormat(`Entity name "${obj["@type"]}" not recognized`);
             const entity = new ctor(obj) as Entity & EType;
             delete (entity as any)["@type"];
 			return entity;
@@ -69,7 +84,7 @@ export class EntityMapper {
 		return EntityMapper.#traverse(data, $ => $, (obj:any) => {
 			if(obj instanceof Entity){
                 const type = this.#reverse[obj.constructor.name];
-                if(!type) throw new Error(`Entity class "${obj.constructor.name}" not recognized`);
+                if(!type) throw new ORMError.InvalidArgument(`Entity class "${obj.constructor.name}" not recognized`);
 				return { "@type": type };
 			}else if(Array.isArray(data)){
 				return [];
