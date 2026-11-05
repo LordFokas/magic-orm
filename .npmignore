@@ -10,3 +10,4 @@ tsconfig-bin.json
 
 *.log
 *.code-workspace
+.gitattributes
