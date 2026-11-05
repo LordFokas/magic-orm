@@ -5,8 +5,8 @@ import { Logger } from '@lordfokas/loggamus';
 
 import { type Connection } from './DB.js';
 import { SelectBuilder, UpdateBuilder, type Filter } from './QueryBuilder.js';
-import { Class, NS, UUID, SkipUUID, NamespacedUUID, EntityConfig, Primitive, TableFields } from './Structures.js';
-import { Serializer } from './Serializer.js';
+import { Class, NS, UUID, SkipUUID, NamespacedUUID, EntityConfig, Primitive, FieldSets, SubtypeConfig, SupertypeConfig, ForeignKey } from './Structures.js';
+import { EntityMapper, Validator, TransformerValidator, TransformableValidator, LinkValidators } from './EntityMapper.js';
 import { ORMError } from './ORMError.js';
 
 let $logger:Logger = Logger.getDefault();
@@ -18,49 +18,27 @@ export function useLogger(logger:Logger) : void {
 
 type EClass<T> = typeof Entity & Class<T>
 
-export type FieldSet<T extends typeof Entity> = keyof (T["$config"]["fields"]) & keyof TableFields;
+/** Represents a field in an entity. Might be a field inherited from a parent entity. */
+export type Field<T extends typeof Entity> = keyof T["$config"]["$full"]["types"];
+
+/** Represents a local field in an entity, specifically defined at this level, not inherited. */
+export type LocalField<T extends typeof Entity> = keyof T["$config"]["$local"]["types"];
+
+/** A named set of fields. May span across parent entities if `$config.chain` is configured. */
+export type FieldSet<T extends typeof Entity> = keyof (T["$config"]["$full"]["fields"]) & keyof FieldSets;
+
+/** Represents a parent entity we have a foreign key to. */
+export type Parent<T extends typeof Entity> = keyof (T["$config"]["$full"]["parents"]);
+
+/** Represents a child entity that has a foreign key to us. */
+export type Child<T extends typeof Entity> = keyof (T["$config"]["$full"]["children"]);
 
 export class Entity {
-    static readonly Serializer = Serializer;
-	private static $fields?: string[] = undefined;
-	private static $parents?: string[] = undefined;
-	private static $children?: string[] = undefined;
-	private static $all?: string[] = undefined;
-
+    static readonly Serializer = EntityMapper;
     declare static readonly $config:EntityConfig;
-    uuid?: UUID<NS>;
+    uuid?: UUID<any>;
 
     // #region Static Primitive Shortcuts // ======================================================
-	/**
-	 * Get one entity from this table, by UUID.
-	 * @deprecated use `Entity.by_uuid`
-	 */  //TODO: remove deprecated method in v5
-	static async uuid <K extends NS, T extends NamespacedUUID<K>, C extends EClass<T>, I extends InstanceType<C>>
-	(this:C, db:Connection, uuid:UUID<K>, select:FieldSet<C>='*') : Promise<I[]> {
-		$logger.forceStackTrace(true).warn("Detected usage of deprecated method Entity.uuid");
-		return this.by_uuid(db, uuid, select);
-	}
-
-	/** 
-	 * Get all the entities from this table
-	 * @deprecated use `Entity.fetch_all`
-	 */  //TODO: remove deprecated method in v5
-	static async all <K extends NS, T extends NamespacedUUID<K>, C extends EClass<T>, I extends InstanceType<C>>
-	(this:C, db:Connection, select:FieldSet<C>='*') : Promise<I[]> {
-		$logger.forceStackTrace(true).warn("Detected usage of deprecated method Entity.all");
-		return this.fetch_all(db, select);
-	}
-
-	/**
-	 * Get all entities from this table where {field} is in {list}.
-	 * @deprecated use `Entity.in_list`
-	 */  //TODO: remove deprecated method in v5
-	static async in <K extends NS, T extends NamespacedUUID<K>, C extends EClass<T>, I extends InstanceType<C>>
-	(this:C, db:Connection, field:string, list:Primitive[], select:FieldSet<C>='*') : Promise<I[]> {
-		$logger.forceStackTrace(true).warn("Detected usage of deprecated method Entity.in");
-		return this.in_list(db, field, list, select);
-	}
-
 	/** Get one entity from this table, by UUID. */
 	static async by_uuid <K extends NS, T extends NamespacedUUID<K>, C extends EClass<T>, I extends InstanceType<C>>
 	(this:C, db:Connection, uuid:UUID<K>, select:FieldSet<C>='*') : Promise<I[]> {
@@ -123,10 +101,10 @@ export class Entity {
 			await this.getSupertype().create_chain(db, ...entities);
 		}
 
-		const whitelist = this.$config.fields['*'];
+		const whitelist = this.$config.$local.fields['*'];
 		const cols = (entities[0] as Entity).prioritizeUUIDs().filter(c => whitelist.includes(c));
 		const vals = [] as any[];
-		const sql = [ "INSERT INTO "+ this.$config.table +" ( "+cols.join(', ')+" )" ];
+		const sql = [ "INSERT INTO "+ this.$config.$sql.table +" ( "+cols.join(', ')+" )" ];
 		if(entities.length == 1){
 			vals.push(...Entity.#data(entities[0], cols));
 			sql.push("VALUES ( "+('?'.repeat(cols.length).split('').join(', '))+" )");
@@ -142,17 +120,17 @@ export class Entity {
 	}
 
 	/** Update one or more database rows with the data contained in this Entity */
-	static async update<C extends EClass<any>>(this:C, db:Connection, entity:InstanceType<C>, update:FieldSet<C> = '*', filters:Filter[] = []) : Promise<any> {
+	static async update<C extends typeof Entity>(this:C, db:Connection, entity:InstanceType<C>, update:FieldSet<C> = '*', filters:Filter[] = []) : Promise<any> {
 		if(filters.length < 1) throw new ORMError.InvalidArgument('Cannot update table with no filters');
 		
 		// handle polymorphic updates
 		if(this.isSubtype()){
 			// determine tables to update
 			let models = [] as { model:EClass<any>, data:any, fields:string[] }[];
-			let model:EClass<any> = this;
+			let model:EClass<C> = this as any;
 			let data = entity;
-			do { // @ts-ignore FIXME: this is a fucky-wucky. How to solve?
-				const fields = model.getFields(data, update, true).filter(f => f != 'uuid');
+			do {
+				const fields = this.getLocalFieldsOf(data, update, true).filter(f => f != 'uuid');
 				if(fields.length > 0) {
 					models.push({
 						model: model,
@@ -160,8 +138,10 @@ export class Entity {
 						fields: fields
 					});
 				}
-				if(model.isSubtype()){ 
-					update = model.$config.chain[update] as any;
+				const $subtype = model.asSubtype()?.$subtype;
+				if($subtype){
+					const chain = $subtype.chain;
+					update = chain ? chain[update] : false as any;
 					if(!update) break;
 					model = model.getSupertype();
 					data = new model(data);
@@ -176,20 +156,18 @@ export class Entity {
 
 				// temporary limitation, won't implement feature until needed
 				if(!uuid) throw new ORMError("Unsupported: Cannot currently do MULTI-UPDATE except via uuid filters");
-
 				return await db.atomic(async () => {
 					for(const entry of models) {
 						await entry.model.do_update(db, entry.data, entry.fields, filters);
 					}
 				}, `MULTI-UPDATE ${models.map(m => m.model.$config.prefix).join(" -> ")}`);
 			} else if(models.length == 1) {
-				// @ts-ignore FIXME: this is a fucky-wucky. How to solve?
 				return await models[0].model.do_update(db, models[0].data, models[0].fields, filters);
 			}
 			throw new ORMError.InvalidState("Cannot update table with no columns to change");
 		}
 
-		return await this.do_update(db, entity, this.getFields(entity, update), filters);
+		return await this.do_update(db, entity, this.getLocalFieldsOf(entity, update), filters);
 	}
 
 	private static async do_update<C extends EClass<any>>(this:C, db:Connection, entity:InstanceType<C>, fields:string[], filters:Filter[] = []) : Promise<any> {
@@ -203,25 +181,26 @@ export class Entity {
 	static async read<C extends EClass<any>>(this:C, db:false, select?:FieldSet<C>, filters?:Filter[]) : Promise<SelectBuilder>;
 	static async read<C extends EClass<any>>(this:C, db:Connection, select?:FieldSet<C>, filters?:Filter[]) : Promise<InstanceType<C>[]>;
 	static async read<C extends EClass<any>>(this:C, db:Connection|false, select:FieldSet<C> = '*', filters:Filter[] = []) : Promise<InstanceType<C>[] | SelectBuilder>{
-		const fields = this.$config.fields[select];
+		const fields = this.$config.$local.fields[select];
 		if(!fields) throw new ORMError.InvalidArgument(`No such field set: ${select}`);
-		const own = this.$config.fields["*"];
+		const own = this.$config.$local.fields["*"];
 		const local = filters.filter(f => own.includes(f.col));
 		filters = filters.filter(f => !local.includes(f));
 		
 		if(!this.isSubtype() && filters.length > 0){
-			throw new ORMError.InvalidState(`Column(s) ${filters.map(f => "'"+f.col+"'").join(', ')} not found in table ${this.$config.table}`);
+			throw new ORMError.InvalidState(`Column(s) ${filters.map(f => "'"+f.col+"'").join(', ')} not found in table ${this.$config.$sql.table}`);
 		}
 
 		// Create the query itself
 		const query = new SelectBuilder(this, this.ALIAS(fields)).filter(local, this);
-		const order = this.$config.order;
+		const order = this.$config.$sql.order;
 		if(order) query.order(this.COL(order));
 
 		// Join table we inherit from if the fieldset generates any other joins
-		if(this.isSubtype() && this.$config.chain[select]) {
-			const parent = await this.getSupertype().read_parent(this.$config.prefix, this.$config.chain[select] as any, filters);
-			if(parent) query.join(parent, this.$config.inherits);
+		const $subtype = this.asSubtype()?.$subtype;
+		if($subtype && $subtype.chain[select]) {
+			const parent = this.getSupertype().read_parent(this.$config.prefix, $subtype.chain[select] as any, filters);
+			if(parent) query.join(parent, $subtype.inherits);
 		}
 
 		if(db === false) return query;
@@ -230,30 +209,31 @@ export class Entity {
 	}
 
 	/** Create queries for table inheritance. */
-	private static async read_parent<C extends EClass<any>>(this:C, prefix:string, select?:FieldSet<C>, filters?:Filter[]) : Promise<SelectBuilder>{
-		const own = this.$config.fields["*"];
+	private static read_parent<C extends EClass<any>>(this:C, prefix:string, select:FieldSet<C>, filters:Filter[]) : SelectBuilder | undefined {
+		const own = this.$config.$local.fields["*"];
 		const local = filters.filter(f => own.includes(f.col));
 		filters = filters.filter(f => !local.includes(f));
 		
-		if(!this.isSubtype() && filters.length > 0){
-			throw new ORMError.InvalidState(`Column(s) ${filters.map(f => "'"+f.col+"'").join(', ')} not found in table ${this.$config.table}`);
+		const $subtype = this.asSubtype()?.$subtype;
+		if(!$subtype && filters.length > 0){ // We reached the root of the tree but there are still filters left to apply
+			throw new ORMError.InvalidArgument(`Column(s) ${filters.map(f => "'"+f.col+"'").join(', ')} not found in table ${this.$config.$sql.table}`);
 		}
 
-		let fields = this.$config.fields[select] as string[];
-		let query:SelectBuilder;
+		let fields = this.$config.$local.fields[select] as string[];
+		let query: SelectBuilder | undefined;
 		if(fields) { // only generate a query for joining this table if the fieldset exists
 			fields = fields.filter(f => f != 'uuid');
 			query = new SelectBuilder(this, this.ALIAS(fields, this.$config.prefix, prefix)).filter(local, this);
 		}
 	
 		// Join table we inherit from if the fieldset generates any other joins
-		if(this.isSubtype() && this.$config.chain[select]) {
-			const parent = await this.getSupertype().read_parent(this.$config.prefix, this.$config.chain[select] as any, filters);
+		if($subtype && $subtype.chain[select]) {
+			const parent = this.getSupertype().read_parent(this.$config.prefix, $subtype.chain[select] as any, filters);
 			if(!query) return parent; // if we're not adding ourselves, return parent directly
-			if(parent) query.join(parent, this.$config.inherits); // only join if we have fields from parent and ourselves
+			if(parent) query.join(parent, $subtype.inherits); // only join if we have fields from parent and ourselves
 		}
 
-		if(!query) $logger.warn(`Inefficient query at ${this.name}/{select} - Use an unset chain instead`);
+		if(!query) $logger.warn(`Inefficient query at ${this.name}/${select} - Use an unset chain instead`);
 		return query; // our table if it was selected, joined with parent if also selected, or undefined if subtype and not selected
 	}
 
@@ -265,33 +245,37 @@ export class Entity {
 	}
 
 	static isSubtype() {
-		return typeof this.$config.inherits === "object";
+		return typeof this.$config.$subtype === "object";
 	}
 
-	static getSupertype() {
-		return Serializer.lookup(this.$config.inherits.parentClass) as EClass<any>;
+	protected static asSubtype() {
+		return this.isSubtype() ? this.$config as SubtypeConfig : undefined;
 	}
 
-	static getFields<C extends EClass<any>>(this:C, entity:InstanceType<C>, fields:FieldSet<C> = '*', allowNull:boolean = false){
-		const all = this.$config.fields[fields];
+	protected static getSupertype() {
+		return EntityMapper.lookup(this.$config.$subtype?.inherits?.parentClass as string) as EClass<any>;
+	}
+
+	static isSupertype() {
+		return typeof this.$config.$supertype === "object";
+	}
+
+	protected static asSupertype() {
+		return this.isSupertype() ? this.$config as SupertypeConfig : undefined;
+	}
+
+	protected static getSubtypes() {
+		return Object.keys(this.$config.$supertype?.inheritors as Record<string, ForeignKey>).map(name => EntityMapper.lookup(name));
+	}
+
+	static getLocalFieldsOf<C extends EClass<any>>(this:C, entity:InstanceType<C>, fields:FieldSet<C> = '*', allowNull:boolean = false){
+		const all = this.$config.$local.fields[fields];
 		if(all === undefined && allowNull) return [];
 		return Object.keys(entity).filter(f => all.includes(f));
 	}
 
 	/** Hook to fire before creation to make adjustements to entities. */
 	protected static beforeCreate<C extends EClass<any>>(this:C, ...entity:InstanceType<C>[]){}
-
-	/** Convert boolean fields from string '0' and '1' to primitive false and true. */
-	static #booleans(entity:Entity) : void {
-        const booleans = entity.$config.booleans;
-		if(Array.isArray(booleans)){
-			for(const key of booleans){
-				if(typeof (entity as any)[key] === 'string'){
-					(entity as any)[key] = ((entity as any)[key] === '1');
-				}
-			}
-		}
-	}
     // #endregion
 
     // #region Instance Methods // ================================================================
@@ -299,6 +283,9 @@ export class Entity {
 	constructor(obj?:object){
 		if(obj){ Object.assign(this, obj); }
 	}
+
+	/** Shortcut to get the class config from an instance */
+    private get $config(){ return (this.constructor as unknown as Record<string, EntityConfig>)["$config"]; }
 
 	/** 
 	 * Build an Entity from a database row.
@@ -362,8 +349,7 @@ export class Entity {
 	async update<C extends typeof Entity>(this:InstanceType<C>, db:Connection, fields:FieldSet<C> = '*') : Promise<any> {
 		if(!this.uuid) throw new ORMError.InvalidState('Update failed: Entity doesn\'t contain a UUID');
 
-		return await (this.constructor as C)
-            .update(db, this, fields, [{ col: 'uuid', var: this.uuid }]);
+		return await (this.constructor as C).update(db, this, fields, [{ col: 'uuid', var: this.uuid }]);
 	}
 
 	/** Upserts (update or insert) this Entity, depending on wether or not this object has a UUID. */
@@ -374,6 +360,18 @@ export class Entity {
     // #endregion
     
     // #region SQL Utils // =======================================================================
+	/** Convert boolean fields from string '0' and '1' to primitive false and true. */
+	static #booleans(entity:Entity) : void {
+        const booleans = entity.$config.$sql.booleans;
+		if(Array.isArray(booleans)){
+			for(const key of booleans){
+				if(typeof (entity as any)[key] === 'string'){
+					(entity as any)[key] = ((entity as any)[key] === '1');
+				}
+			}
+		}
+	}
+
     /**
 	 * Creates a list of fields for a SELECT query, aliased as XX_col_name
 	 * where XX is this table's 2-letter code.
@@ -389,7 +387,7 @@ export class Entity {
 
 	/** Returns this table aliased with its 2-letter code for use in queries. */
 	static TABLE(prefix:string = this.$config.prefix) : string {
-		return `${this.$config.table} ${prefix}`;
+		return `${this.$config.$sql.table} ${prefix}`;
 	}
 
 	/** Generate a zero-filled UUID with an appropriate size for this table's PK. */
@@ -403,7 +401,7 @@ export class Entity {
 	 */
 	protected static UUID(gen:()=>string = UUIDv4) : UUID<NS> {
 		let octets;
-		switch(this.$config.uuidsize){
+		switch(this.$config.$sql.uuidsize){
 			case 'small':
 				octets = gen().split('').reverse().join('').substring(0, 12);
 				break;
@@ -416,121 +414,123 @@ export class Entity {
 			case 'huge':
 				octets = gen()+'-'+gen();
 				break;
-			default: throw new ORMError.InvalidArgument(`No such UUID size: ${this.$config.uuidsize}`);
+			default: throw new ORMError.InvalidArgument(`No such UUID size: ${this.$config.$sql.uuidsize}`);
 		}
 		return `${this.$config.prefix}::${octets}`;
 	}
     // #endregion
 
-    // #region Serialization // ===================================================================
-    /** Transforms a JSON structure into concrete entities */
-	static fromJSON<T extends Entity>(this:EClass<T>, data:string) : T {
-		const result = Serializer.fromJSON<T>(data);
-		return this.$enforceOwnType(result, "Root");
+	// #region Validators // ======================================================================
+	private static $typeof(value: any) {
+		if(value === null) return "null";
+		if(value instanceof Entity) return EntityMapper.name_of(value.constructor as EClass<any>);
+		return typeof value;
 	}
 
-	/** Transforms an object into concrete entities */
-	static fromObject<T extends Entity>(this:EClass<T>, data:object) : T {
-		const result = Serializer.fromObject<T>(data);
-		return this.$enforceOwnType(result, "Root");
+	private static array_of(obj: any, path: string, errors: string[], name: string, fn: Validator) {
+		if(!Array.isArray(obj)) {
+			return errors.push(`${path}: expected ${name}[], found ${this.$typeof(obj)} instead`);
+		}
+		let invalid = false;
+		let types = [] as string[];
+		obj.forEach(v => {
+			if(v?.constructor === this) {
+				types.push(name);
+			} else {
+				types.push(this.$typeof(v));
+				invalid = true;
+			}
+		});
+		if(invalid) {
+			return errors.push(`${path}: expected ${name}[], found [${types.join(', ')}]`);
+		}
+		obj.forEach((v, i) => fn(v, `${path}[${i}]`, errors));
 	}
 
-	/** Validate that a type has a correct structure */
-	protected static $enforceOwnType<T extends Entity>(this:EClass<T>, obj:T, path: string) : T {
-		const name = Serializer.name_of(this);
+	private static as_transformable<C extends typeof Entity, T extends InstanceType<C>> (this:EClass<T>, fn: Validator) : TransformableValidator<T> {
+		return Object.assign(fn, {
+			transform: () => {
+				return ((obj: any) => {
+					obj = EntityMapper.fromObject(obj);
+					const start = performance.now();
+					const errors = [] as string[];
+					fn(obj, "Root", errors);
+					const elapsed = performance.now() - start;
+					$logger.debug(`Performed payload model validation in ${elapsed}ms`);
+					if(errors.length > 0) {
+						throw new ORMError.InvalidFormat(errors.join('\n'));
+					}
+					return obj;
+				}
+			) as TransformerValidator<T>;
+		}});
+	}
+
+	private static validate_self(name: string, allowed: string[], obj: any, path: string, errors: string[]) {
 		if(!(obj instanceof Entity)){
-			throw new ORMError.InvalidFormat(path + " is not a recognized model, expected " + name);
+			const instead = this.$typeof(obj);
+			errors.push(`${path} is not a valid model: expected ${name}, found ${instead}`);
+			return false;
 		}
 		if(obj.constructor !== this){
-			const instead = Serializer.name_of(obj.constructor as EClass<any>);
-			throw new ORMError.InvalidFormat(`${path} type mismatch: expected ${name} but got ${instead}`);
+			const instead = EntityMapper.name_of(obj.constructor as EClass<any>);
+			errors.push(`${path} type mismatch: expected ${name}, found ${instead}`);
+			return false;
 		}
-		const allowed = this.$getAll();
 		const failed = Object.keys(obj).filter(k => !allowed.includes(k));
 		if(failed.length > 0) {
-			throw new ORMError.InvalidFormat(`${path}: field(s) '${failed.join("', '")}' not allowed in ${name}`)
+			errors.push(`${path}: field(s) '${failed.join("', '")}' not allowed in ${name}`);
 		}
-		this.$getParents().forEach(k => {
-			const value: any = obj[k];
-			if(value === undefined) return;
-			const p_name = this.$config.parents[k].parentClass;
-			const parent = Serializer.lookup(p_name) as EClass<any>;
-			parent.$enforceOwnType(value, path+"."+k);
+		return true;
+	}
+
+	static flat<C extends typeof Entity, T extends InstanceType<C>> (this:EClass<T>, fields: FieldSet<C>) : TransformableValidator<T> {
+		const name = EntityMapper.name_of(this);
+		const allowed = this.$config.$full.fields[fields];
+		if(!allowed) throw new ORMError.InvalidArgument(`FieldSet not found: ${name}/${fields}`);
+
+		return this.as_transformable((obj: any, path: string, errors: string[]) => {
+			this.validate_self(name, allowed, obj, path, errors);
 		});
-		this.$getChildren().forEach(k => {
-			const value: any = obj[k];
-			if(value === undefined) return;
-			const p = path+"."+k;
-			const c_name = this.$config.children[k].childClass;
-			if(!Array.isArray(value)) {
-				throw new ORMError.InvalidFormat(`${p}: expected ${c_name}[], found ${value === null ? 'null' : typeof value}`);
-			}
-			const child = Serializer.lookup(c_name) as EClass<any>;
-			let error = false;
-			const types = [];
-			for(const v of value) {
-				if(v instanceof child) {
-					types.push(c_name);
-				} else if(v instanceof Entity){
-					types.push(Serializer.name_of(v.constructor as EClass<any>));
-					error = true;
-				} else {
-					types.push(v === null ? 'null' : typeof v);
-					error = true;
+	}
+
+	static flat_array<C extends typeof Entity, T extends InstanceType<C>> (this:EClass<T>, fields: FieldSet<C>) : TransformableValidator<T> {
+		const name = EntityMapper.name_of(this);
+		const flat = this.flat(fields);
+
+		return this.as_transformable((obj: any, path: string, errors: string[]) => {
+			this.array_of(obj, path, errors, name, flat);
+		});
+	}
+
+	static nested<C extends typeof Entity, T extends InstanceType<C>> (this:EClass<T>, fields: FieldSet<C>, link: LinkValidators<C>) : TransformableValidator<T> {
+		const name = EntityMapper.name_of(this);
+		const flats = this.$config.$full.fields[fields];
+		if(!flats) throw new ORMError.InvalidArgument(`FieldSet not found: ${name}/${fields}`);
+		const links = Object.keys(link);
+		if(links.length == 0) throw new ORMError.InvalidArgument(`No links defined for ${name}`);
+		const allowed = [ ...flats, ...links ];
+
+		return this.as_transformable((obj: any, path: string, errors: string[]) => {
+			const safe = this.validate_self(name, allowed, obj, path, errors);
+			if(!safe) return false; // wrong structure, it is unsafe to attempt to traverse entity relations
+			
+			Object.entries(link).forEach(([name, validator]) => {
+				const value = (obj as Record<string, any>)[name];
+				if(value !== undefined) {
+					validator(value, `${path}.${name}`, errors);
 				}
-			}
-			if(error) {
-				throw new ORMError.InvalidFormat(`${p}: expected ${c_name}[], found [${types.join(', ')}]`);
-			}
-			value.forEach((v, i) => {
-				child.$enforceOwnType(v, `${p}[${i}]`);
 			});
 		});
-		return obj;
 	}
 
-	protected static $getFields<T extends Entity>(this:EClass<T>) : string[] {
-		if(this.$fields === undefined) {
-			this.$fields = [...this.$config.fields['*']];
-			if(this.isSubtype()) {
-				this.$fields.push(...this.getSupertype().$getFields().filter(f => f !== 'uuid'));
-			}
-		}
-		return this.$fields;
-	}
+	static nested_array<C extends typeof Entity, T extends InstanceType<C>> (this:EClass<T>, fields: FieldSet<C>, link: LinkValidators<C>) : TransformableValidator<T> {
+		const name = EntityMapper.name_of(this);
+		const nested = this.nested(fields, link);
 
-	protected static $getParents<T extends Entity>(this:EClass<T>) : string[] {
-		if(this.$parents === undefined) {
-			this.$parents = [...Object.keys(this.$config.parents)];
-			if(this.isSubtype()) {
-				this.$parents.push(...this.getSupertype().$getParents());
-			}
-		}
-		return this.$parents;
+		return this.as_transformable((obj: any, path: string, errors: string[]) => {
+			this.array_of(obj, path, errors, name, nested);
+		});
 	}
-
-	protected static $getChildren<T extends Entity>(this:EClass<T>) : string[] {
-		if(this.$children === undefined) {
-			this.$children = [...Object.keys(this.$config.children)];
-			if(this.isSubtype()) {
-				this.$children.push(...this.getSupertype().$getChildren());
-			}
-		}
-		return this.$children;
-	}
-
-	protected static $getAll<T extends Entity>(this:EClass<T>) : string[] {
-		if(this.$all === undefined) {
-			this.$all = [
-				...this.$getFields(),
-				...this.$getParents(),
-				...this.$getChildren()
-			];
-		}
-		return this.$all;
-	}
-    // #endregion
-
-    /** Shortcut to get the class config from an instance */
-    private get $config(){ return (this.constructor as unknown as Record<string, EntityConfig>)["$config"]; }
+	// #endregion
 }

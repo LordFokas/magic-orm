@@ -1,32 +1,49 @@
-import { type Entity } from "./Entity.js";
-
 export interface Class<T> { new (...$:any) : T }
 export type Member<T> = T extends (infer U)[] ? U : never;
 export type Primitive = string | number | boolean;
-
-export interface EntitySerializer {
-	fromJSON<T extends Entity>(data:string) : T
-	fromObject<T extends Entity>(data:object) : T
-	toJSON(data:Entity|Array<Entity>, pretty:boolean) : string
-	toObject(data:Entity|Array<Entity>) : object
-}
+type TypeOfPrimitive = "string"|"number"|"boolean";
 
 
 // Entity Configuration
-export interface EntityConfig {
-    prefix: NS
-    table: string
-    uuidsize: UUIDSize
-    booleans?: string[]
-    order?: string[]
-    fields: TableFields
-	chain?: Record<string, string>
-	inherits?: ForeignKey
+interface BaseConfig {
+	$sql: {
+		table: string
+		uuidsize: UUIDSize
+		booleans: string[]
+		order?: string[]
+	}
+	prefix: NS
+	$local: FieldSettings
+	$full: FieldSettings
+}
+
+interface FieldSettings {
+	types: Record<string, TypeOfPrimitive>
+	fields: FieldSets
 	parents: Record<string, Relationship>
 	children: Record<string, Relationship>
 }
 
-export type TableFields = { "*": string[] } & Record<string, string[]>;
+export interface SubConfig {
+	$subtype: {
+		chain: Record<string, string>
+		inherits: ForeignKey
+	}
+}
+
+export interface SuperConfig {
+	$supertype: {
+		inheritors: Record<string, ForeignKey>
+	}
+}
+
+export type EntityConfig = BaseConfig & Partial<SubConfig> & Partial<SuperConfig>;
+export type SubtypeConfig = BaseConfig & SubConfig;
+export type SupertypeConfig = BaseConfig & SuperConfig;
+export interface Subtype { $config: SubtypeConfig }
+export interface Supertype { $config: SupertypeConfig }
+
+export type FieldSets = { "*": string[] } & Record<string, string[]>;
 
 export interface ForeignKey {
 	parentClass: string

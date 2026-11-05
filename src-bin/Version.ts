@@ -4,6 +4,9 @@ import pg from 'pg';
 import { Logger } from "@lordfokas/loggamus";
 import { Task } from "./Task.js";
 
+import { createRequire } from "module";
+const $package = createRequire(import.meta.url)("../package.json");
+
 const uuidmap = {
     small: 16,
     standard: 40,
@@ -13,14 +16,13 @@ const uuidmap = {
 
 type Model = {
     entity: {
-        _subclasses: string[]
+        $subclasses: string[]
         extends?: string
         prefix: string
         table: string
         uuid: "small"|"standard"|"long"|"huge"
     }
     fields: Record<string, string>
-    chain?: Record<string, string>
     keys: {
         entity: string // other entity we are linking to
         key: string // field name for the entity on the N side. The table field is assumed to be uuid_field.
@@ -112,7 +114,7 @@ export class Version {
                     "\n\n",
                     ...Object.entries(this.models).map(([name, model]) => [
                         "// "+name,
-                        `export type K_${name} = ${model.entity._subclasses ? model.entity._subclasses.map(k => `K_${k}`).join(' | '): `"${model.entity.prefix}"`}`,
+                        `export type K_${name} = ${model.entity.$subclasses ? model.entity.$subclasses.map(k => `K_${k}`).join(' | '): `"${model.entity.prefix}"`}`,
                         [
                             `export interface T_${name}${model.entity.extends ? ` extends T_${model.entity.extends}` : ''} {`,
                             `    uuid: UUID<K_${name}>`,
@@ -138,7 +140,8 @@ export class Version {
                     "// Auto-generated file by magic-orm bin tools",
                     "// Do not overwrite or modify manually",
                     "",
-                    'import { type EntityConfig } from "@lordfokas/magic-orm";'
+                    'import { type EntityConfig } from "@lordfokas/magic-orm";',
+                    `export const __magic_orm_version__ = "${$package.version}";`
                 ];
         
                 this.foreachModel((name, model) => {
@@ -504,8 +507,8 @@ export class Version {
             const superclass = model.entity.extends;
             if(superclass) {
                 const superspec = this.models[superclass];
-                if(!superspec.entity._subclasses) superspec.entity._subclasses = [];
-                superspec.entity._subclasses.push(name);
+                if(!superspec.entity.$subclasses) superspec.entity.$subclasses = [];
+                superspec.entity.$subclasses.push(name);
             }
             model.keys.forEach(v => {
                 if(!this.keys_r[v.entity]) this.keys_r[v.entity] = [];
