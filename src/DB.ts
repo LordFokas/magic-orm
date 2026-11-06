@@ -227,14 +227,12 @@ class DBUtil {
 		return result;
 	}
 
-	/** Convert parameters into the correct data types this DB accepts */
+	/** Check that no parameter is undefined. pg sends everything else as-is, booleans included. */
 	static patch(values:any[]) : any[] {
 		if(values)
 			for(const idx in values){
 				var v = values[idx];
 				if(v === undefined) throw new ORMError.InvalidArgument("UNDEFINED value in prepared array index #" + idx);
-				else if(v === true) values[idx] = 1;
-				else if(v === false) values[idx] = 0;
 			}
 		return values;
 	}

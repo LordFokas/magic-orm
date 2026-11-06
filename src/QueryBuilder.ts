@@ -1,5 +1,6 @@
 import { type Connection } from './DB.js';
 import { Entity } from './Entity.js';
+import { ORMError } from './ORMError.js';
 import { ForeignKey, Primitive } from './Structures.js';
 
 export class QueryBuilder {
@@ -29,7 +30,8 @@ export class QueryBuilder {
 				this.where(entity.COL([f.col])+' IN ( '+f.in.map(_=>'?').join(', ')+' )');
 				this.param(...f.in);
 			}else{
-				this.where(entity.COL([f.col])+' '+(f.op||'=')+' '+(f.val||'?'));
+				if(f.val === '') throw new ORMError.InvalidArgument(`Filter on column '${f.col}' has an empty val`);
+				this.where(entity.COL([f.col])+' '+(f.op||'=')+' '+(f.val !== undefined ? f.val : '?'));
 				if(f.var !== undefined) this.param(f.var);
 			}
 		});

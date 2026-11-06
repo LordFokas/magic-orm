@@ -2,6 +2,7 @@
 
 import path from "node:path";
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 
 import semver_compare from 'semver/functions/compare.js';
 import semver_valid from 'semver/functions/valid.js';
@@ -15,7 +16,8 @@ import { Task } from "./Task.js";
 
 class MagicCLI {
     static readonly METADATA = "__magic_orm__";
-    static readonly pkg = this.readJSON("./package.json");
+    /** magic-orm's own package.json, found relative to this module rather than the working directory. */
+    static readonly pkg = createRequire(import.meta.url)("../package.json");
     static readonly program = new Command("magic-orm").version(this.pkg.version, "-V").description("Command line tools for magic-orm");
     static readonly levels = {
         FINE: LogLevel.FINE,
@@ -71,8 +73,15 @@ class MagicCLI {
             this.setLogLevel(options.L);
             let version = null;
 
-            await this.withDB(options, async db => {
-                await this.createMetadataTable(db, options.S);
+            await this.maybeDB(options, async db => {
+                if(!db) {
+                    Logger.info("No database options given, skipping database status.\n");
+                    return;
+                }
+                if(!await this.hasMetadataTable(db, options.S)) {
+                    Logger.warn(`No magic-orm metadata table in schema '${options.S}': nothing installed.\n`);
+                    return;
+                }
                 const result = await db.query([
                     `SELECT property, value`,
                     `FROM ${options.S}.${this.METADATA}`
@@ -145,11 +154,14 @@ class MagicCLI {
 
                 const { selected } = this.pickVersion(sourcedir, v);
                 const json = this.readJSON(path.join(sourcedir, selected + ".json"));
-                const version = new Version(selected, options.S, json, db);
+                const version = new Version(selected, options.S, json);
 
                 const task = new Task("Install v"+selected)
                 .addSubtask(version.install().atomic(db))
-                .addStep("Update magic-orm metadata", () => this.setCurrentVersion(db as pg.Pool, options.S, selected))
+                .addStep("Update magic-orm metadata", async () => {
+                    await this.createMetadataTable(db as pg.Pool, options.S);
+                    await this.setCurrentVersion(db as pg.Pool, options.S, selected);
+                })
                 .addSubtask(version.typescript());
 
                 await task.execute();
@@ -172,7 +184,7 @@ class MagicCLI {
                 }
 
                 const json = this.readJSON(path.join(sourcedir, version + ".json"));
-                const current = new Version(version, options.S, json, db);
+                const current = new Version(version, options.S, json);
 
                 await this.confirmWaiver(options, this.$warn(
                     `Preparing to DROP ALL ON SCHEMA ${options.S}`,
@@ -200,7 +212,7 @@ class MagicCLI {
                 }
 
                 const json = this.readJSON(path.join(sourcedir, version + ".json"));
-                const current = new Version(version, options.S, json, db);
+                const current = new Version(version, options.S, json);
 
                 await this.confirmWaiver(options, this.$warn(
                     `Preparing to TRUNCATE ALL ON SCHEMA ${options.S}`,
@@ -330,8 +342,14 @@ class MagicCLI {
         ].join('\n'));
     }
 
+    /** Read-only check: whether the metadata table exists, so read commands never have to create it. */
+    private static async hasMetadataTable(db: pg.Pool, schema: string) : Promise<boolean> {
+        const result = await db.query(`SELECT to_regclass($1) IS NOT NULL AS present;`, [`${schema}.${this.METADATA}`]);
+        return result.rows[0].present;
+    }
+
     private static async getCurrentVersion(db: pg.Pool, schema: string) : Promise<string|false> {
-        await this.createMetadataTable(db, schema);
+        if(!await this.hasMetadataTable(db, schema)) return false;
         const results = await db.query([
             `SELECT property, value`,
             `FROM ${schema}.${this.METADATA}`,

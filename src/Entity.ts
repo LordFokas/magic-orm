@@ -271,6 +271,7 @@ export class Entity {
 	static getLocalFieldsOf<C extends EClass<any>>(this:C, entity:InstanceType<C>, fields:FieldSet<C> = '*', allowNull:boolean = false){
 		const all = this.$config.$local.fields[fields];
 		if(all === undefined && allowNull) return [];
+		if(all === undefined) throw new ORMError.InvalidArgument(`No such field set: ${fields}`);
 		return Object.keys(entity).filter(f => all.includes(f));
 	}
 
@@ -300,7 +301,6 @@ export class Entity {
 				(this as Record<string, any>)[k.substring(3)] = v;
 			}
 		}
-		Entity.#booleans(this);
 		return this;
 	}
 
@@ -360,18 +360,6 @@ export class Entity {
     // #endregion
     
     // #region SQL Utils // =======================================================================
-	/** Convert boolean fields from string '0' and '1' to primitive false and true. */
-	static #booleans(entity:Entity) : void {
-        const booleans = entity.$config.$sql.booleans;
-		if(Array.isArray(booleans)){
-			for(const key of booleans){
-				if(typeof (entity as any)[key] === 'string'){
-					(entity as any)[key] = ((entity as any)[key] === '1');
-				}
-			}
-		}
-	}
-
     /**
 	 * Creates a list of fields for a SELECT query, aliased as XX_col_name
 	 * where XX is this table's 2-letter code.

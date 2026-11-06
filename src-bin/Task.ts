@@ -1,27 +1,33 @@
 import { Logger } from "@lordfokas/loggamus";
 import pg from "pg";
 
+/** Something steps can run SQL on: the pool, or the single client an atomic task checked out. */
+export type Queryable = pg.Pool | pg.PoolClient;
+
+type StepFn = (db?: Queryable) => Promise<void> | void;
+
 export class Task {
     readonly description: string;
-    private readonly steps: {name: string, fn: (depth: number) => Promise<void> | void }[] = [];
+    private readonly steps: {name: string, fn: (depth: number, db?: Queryable) => Promise<void> | void }[] = [];
 
     constructor(description: string) {
         this.description = description;
     }
 
-    async execute(depth: number = 0) {
+    /** Run every step in order. `db` is handed to each step and subtask. */
+    async execute(depth: number = 0, db?: Queryable) {
         if(depth == 0) Logger.info(this.description);
         depth++;
         for(const step of this.steps) {
             Logger.info(this.tree(depth) + step.name);
-            await step.fn(depth);
+            await step.fn(depth, db);
         }
     }
 
-    addStep(name: string, fn: () => Promise<void> | void) {
+    addStep(name: string, fn: StepFn) {
         this.steps.push({
             name: name,
-            fn: fn
+            fn: (_, db) => fn(db)
         });
         return this;
     }
@@ -29,13 +35,13 @@ export class Task {
     addSubtask(task: Task) {
         this.steps.push({
             name: task.description,
-            fn: d => task.execute(d)
+            fn: (d, db) => task.execute(d, db)
         });
         return this;
     }
 
-    atomic(db: pg.Pool) {
-        const task = new Task.Atomic(this.description, db);
+    atomic(pool: pg.Pool) {
+        const task = new Task.Atomic(this.description, pool);
         task.steps.push(...this.steps);
         return task;
     }
@@ -45,28 +51,39 @@ export class Task {
         return "|   ".repeat(d-1)+ "|-- ";
     }
 
+    /** Runs all of its steps inside one transaction, on one client checked out of the pool. */
     static readonly Atomic = class AtomicTask extends Task {
-        private readonly db: pg.Pool;
+        private readonly pool: pg.Pool;
 
-        constructor(description: string, db: pg.Pool) {
+        constructor(description: string, pool: pg.Pool) {
             super(description);
-            this.db = db;
+            this.pool = pool;
         }
 
         async execute(depth: number = 0): Promise<void> {
+            const client = await this.pool.connect();
             let success = false;
             try {
                 Logger.warn(this.tree(depth) + "BEGIN TRANSACTION");
-                await this.db.query("BEGIN TRANSACTION;");
-                await super.execute(depth);
-                await this.db.query("COMMIT;");
+                await client.query("BEGIN TRANSACTION;");
+                await super.execute(depth, client);
+                await client.query("COMMIT;");
                 Logger.warn(this.tree(depth) + "COMMIT");
                 success = true;
             } finally {
+                let broken = false;
                 if(!success) {
                     Logger.error(this.tree(depth) + "ROLLBACK");
-                    await this.db.query("ROLLBACK;");
+                    try {
+                        await client.query("ROLLBACK;");
+                    } catch(e) {
+                        // Don't mask the original error; log this one and discard the client.
+                        broken = true;
+                        Logger.error(e instanceof Error ? e : new Error(String(e)));
+                    }
                 }
+                // release(true) destroys the client instead of returning it to the pool in an unknown state.
+                client.release(broken);
             }
         }
     }

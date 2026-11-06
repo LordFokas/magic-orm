@@ -1,6 +1,6 @@
 # magic-orm - Known Problems
 
-Known issues we **want to solve**. Limitations we have decided to accept live in [DEVELOPMENT.md](DEVELOPMENT.md#known-limitations-accepted). When a problem is fixed, delete its entry. Numbers are never reused; the next one is **#34**.
+Known issues we **want to solve**. Limitations we have decided to accept live in [DEVELOPMENT.md](DEVELOPMENT.md#known-limitations-accepted). When a problem is fixed, delete its entry. Numbers are never reused; the next one is **#35**.
 
 ## Serializer
 
@@ -14,28 +14,11 @@ Known issues we **want to solve**. Limitations we have decided to accept live in
 3. **`Serializer.toObject` empties nested plain objects when the top-level input is an array.** `toObject([new A({ meta: { x: 1 } })])` returns `[{ "@type": "A", "meta": [] }]`. The `init` callback checks `Array.isArray(data)`, the outer argument, instead of `obj`, the current node. Reproduced with an ad-hoc script.
    - **Intended fix:** see #2.
 
-4. **The entity registry is keyed by `constructor.name`.** `Serializer.register` and `toObject` look classes up by their JavaScript name. Minification breaks the lookup, and two classes with the same name in different modules overwrite each other.
-   - **Intended fix:** key the reverse map by the class itself (a `Map<Class, string>`).
-
 ## Querying
 
 5. **Filters on parent-table columns are silently dropped when reading a subtype with an unchained field set.** In `Entity.read`, filters on columns outside the subtype's own table are only forwarded to `read_parent` when `$config.chain[select]` exists. Otherwise they're discarded without an error, and the query returns rows the filter should have excluded. Generated configs only chain `'*'`, so `Sub.read(db, 'uuid', [{ col: 'parent_col', var: x }])` ignores its filter. `read_parent` has the same hole: when the parent has no matching field set, its local filters are never applied.
    - **Workaround:** read subtypes with the `'*'` field set whenever you filter on inherited columns.
    - **Intended fix:** always join the parent when a filter needs it, even if no parent columns are selected; otherwise throw `ORMError.InvalidState` as non-subtypes already do.
-
-6. **Every `?` in a query is treated as a placeholder.** `DBUtil.validate` counts every `?` and `DBUtil.pgps` rewrites every one to `$n`, including those inside string literals and Postgres's JSONB operators (`?`, `?|`, `?&`). Such queries fail with "Invalid Parameterization".
-   - **Workaround:** pass literals as parameters, and use `jsonb_exists()` / `jsonb_exists_any()` / `jsonb_exists_all()` instead of the operators.
-   - **Intended fix:** options are skipping quoted strings when scanning, or switching the builders to emit `$n` directly. Leaning towards the second.
-
-7. **A `FilterVal` with a falsy `val` becomes a placeholder with no parameter.** `QueryBuilder.filter` writes `f.val || '?'`, so `val: 0` or `val: ''` emits `?` without pushing a parameter, and the query fails the parameter-count check.
-   - **Workaround:** use `var` for values.
-   - **Intended fix:** test `f.val !== undefined`.
-
-8. **Identifiers and raw fragments are concatenated into SQL.** Values are parameterized, but column names (`Filter.col`), `FilterVal.val`, `SelectBuilder.order`, `Connection.schema()` and the CLI's `-S` schema all go into the query text unchecked. That's safe only while every caller is trusted code.
-   - **Intended fix:** validate column names against the entity's field sets, and quote identifiers with a single helper. Decide whether `FilterVal.val` stays as a deliberate raw-SQL escape hatch; if it does, it's an accepted limitation and should be documented as one.
-
-9. **Leftover MySQL boolean handling.** `DBUtil.patch` sends `true`/`false` as `1`/`0`, and `Entity.#booleans` converts the strings `'1'`/`'0'` back. Postgres has a native boolean type and `pg` returns real booleans, so at best this code does nothing, and it hides what's actually stored.
-   - **Intended fix:** remove both conversions once a test confirms booleans round-trip natively.
 
 ## Connections and transactions
 
@@ -49,9 +32,6 @@ Known issues we **want to solve**. Limitations we have decided to accept live in
 
 ## CLI and code generation
 
-12. **CLI "atomic" tasks run on the pool, not on one connection.** `Task.Atomic` sends `BEGIN`, the steps and `COMMIT` through `pg.Pool.query`, and each call may check out a different client. It works today only because the steps run one after another and pg-pool hands back the most recently released client. Nothing guarantees that, and the client is returned to the pool with a transaction still open.
-    - **Intended fix:** check out one `PoolClient` for the duration of the task, and pass that client to `Version` and to the steps.
-
 13. **Generated model imports are broken on Windows.** `Version.typescript` builds import specifiers with `path.join`, which produces `..\defs\Models.js`. Inside a TS string literal, `\d` and `\M` are escape sequences, so the import points somewhere else.
     - **Workaround:** fix the imports in the generated model classes by hand. They're written only once; later runs skip existing files.
     - **Intended fix:** use `path.posix.join` for import specifiers (filesystem paths can keep `path.join`).
@@ -64,12 +44,6 @@ Known issues we **want to solve**. Limitations we have decided to accept live in
     - **Workaround:** install into `public`, or give the database user a `search_path` that starts with the target schema.
     - **Intended fix:** emit `REFERENCES ${schema}.${table}(uuid)`.
 
-16. **`magic-orm -V` prints the wrong version.** `MagicCLI` reads `./package.json` relative to the working directory, which is the user's project, not magic-orm.
-    - **Intended fix:** resolve `package.json` relative to the CLI's own module (`import.meta.url`).
-
-17. **Read-only commands write to the database.** `status` and `typescript current` call `createMetadataTable`, so checking the version creates a table.
-    - **Intended fix:** read with a query that treats a missing table as "nothing installed", and create the table only in `install`.
-
 18. **Migrations are half built.** `Version.upgrade` and `Version.downgrade` exist, but no CLI command calls them, while `install` tells users to "use a migration command".
     - **Intended fix:** add `upgrade` / `downgrade` commands, or remove the hint until they exist.
 
@@ -77,20 +51,19 @@ Known issues we **want to solve**. Limitations we have decided to accept live in
 
 20. **`confirmWaiver` clears an interval with `clearTimeout`.** It works in Node, where the two are interchangeable, but it reads like a bug. Use `clearInterval`.
 
+34. **`install --dry-run` performs a real install.** The intended design is that a dry run executes with an undefined database connection, so every step prepares its work and logs each query as it would have run, without executing anything. None of that is wired up:
+    - nothing reads `options.dryRun`;
+    - `install` always connects (`withDB`), and the atomic task needs a pool;
+    - the metadata step writes to the database directly;
+    - `version.typescript()` writes the generated files.
+
+    `Version.query` throws when it has no connection (since the #12 fix); before that it silently skipped the query, logging it only at DEBUG.
+    - **Intended fix:** pending a review of the CLI architecture. Open questions: whether the read-only "already installed?" check should still query the database, and whether a dry run should write the TypeScript files.
+
 ## Library design
-
-21. **Importing the library patches `Promise.prototype` and `Object.prototype`.** `Hacks.ts` adds `Promise.prototype.first` and `Object.prototype.isHigherOrder` globally, for every program that imports magic-orm. Nothing uses `isHigherOrder`.
-    - **Intended fix:** delete `isHigherOrder`, and replace `.first()` with an exported `first(promise)` helper. That's a breaking change, so it belongs in v5 alongside the deprecated method removals.
-
-22. **`Promise.prototype.first` replaces falsy fallbacks with `null`.** It returns `fallback || null`, so `first(0)` or `first('')` on an empty array yields `null`.
-    - **Intended fix:** use `fallback ?? null`. Moot if #21 lands first.
 
 23. **The update path needs `@ts-ignore` and `any`.** `Entity.update` carries two `@ts-ignore FIXME` comments and casts through `any`, and the library has 32 errors under `--strict`.
     - **Intended fix:** type the polymorphic update loop properly, then turn on `strict` in `tsconfig.json`.
-
-24. **`Entity.getFields` crashes on an unknown field set.** When the field set doesn't exist and `allowNull` is false, `all` is `undefined` and `all.includes` throws a `TypeError` instead of an `ORMError`.
-
-25. **A log message prints `{select}` literally.** In `Entity.read_parent`, the "Inefficient query" warning is missing a `$` before `{select}`.
 
 ## Testing
 
@@ -106,6 +79,3 @@ Places that keep their own copy of a fact owned elsewhere.
 31. **The `UUIDSize` union is duplicated.** `src-bin/Version.ts`'s `Model` type restates `"small"|"standard"|"long"|"huge"` instead of importing `UUIDSize`.
 
 32. **The two-letter prefix length is hard-coded in three places.** `NS` in `Structures.ts`, `substring(3)` in `Entity.$ingest`, and the `[A-Z]{2}` alias regex in `DBUtil.validate`.
-
-33. **`package-lock.json` disagrees with `package.json` on the package version.** The lock says `4.1.0-alpha.1`; `package.json` says `4.1.0-alpha.6`.
-    - **Intended fix:** run `npm install` after each version bump, or bump with `npm version`, which updates both.

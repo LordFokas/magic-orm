@@ -1,10 +1,13 @@
 {
     "compilerOptions": {
 		"esModuleInterop": true,
-		"outDir": "bin/",
-		"moduleResolution": "node",
-		"module": "ES2020",
+		"rootDir": "./src-bin",
+		"outDir": "./bin",
+
+		"moduleResolution": "NodeNext",
+		"module": "NodeNext",
 		"target": "ESNext",
+		"lib": ["ESNext"],
 		"useDefineForClassFields": true,
 
 		"noImplicitAny": true,

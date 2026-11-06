@@ -1,8 +1,7 @@
 import path from "node:path";
 import fs from "node:fs";
-import pg from 'pg';
 import { Logger } from "@lordfokas/loggamus";
-import { Task } from "./Task.js";
+import { Task, type Queryable } from "./Task.js";
 
 import { createRequire } from "module";
 const $package = createRequire(import.meta.url)("../package.json");
@@ -63,7 +62,6 @@ type TableDiff = {
 
 export class Version {
     readonly version: string;
-    private readonly pool?: pg.Pool;
     private schema: string;
     private types: Record<string, { ts:string, sql:string }>;
     private files: {
@@ -79,9 +77,8 @@ export class Version {
     private models: Record<string, Model> = {};
     private tables: Record<string, Table> = {};
 
-    constructor(version: string, schema: string, json: any, pool?: pg.Pool) {
+    constructor(version: string, schema: string, json: any) {
         this.version = version;
-        this.pool = pool;
         this.schema = schema;
         this.types = json.types;
         this.files = json.files;
@@ -145,8 +142,6 @@ export class Version {
                 ];
         
                 this.foreachModel((name, model) => {
-                    const booleans = this.getBooleans(model);
-        
                     const fields = [
                         `'uuid'`,
                         ...model.keys.map(v => `'uuid_${v.key}'`),
@@ -201,7 +196,6 @@ export class Version {
                         `        'uuid': [ 'uuid' ]`,
                         `    },`,
                         ...chain,
-                        `    booleans: [${booleans.map(([k, _]) => `'${k}'`).join(', ')}]${ booleans.length ? '' : ' as string[]' },`,
                         ...inherits,
                         `    parents: {`,
                         parents,
@@ -256,14 +250,14 @@ export class Version {
     install() : Task {
         return (
             new Task("SQL Install from scratch v"+this.version)
-            .addStep("Create SQL Tables", () => this.queryEachTable((name, table) => [
+            .addStep("Create SQL Tables", db => this.queryEachTable(db, (name, table) => [
                 `CREATE TABLE ${this.schema}.${name} (`,
                 Object.entries(table.columns).map(
                     ([k, v]) => `    ${k} ${v}`
                 ).join(',\n'),
                 `);`
             ]))
-            .addStep("Create SQL Constraints", () => this.queryEachTable((name, table) => [
+            .addStep("Create SQL Constraints", db => this.queryEachTable(db, (name, table) => [
                 `ALTER TABLE ${this.schema}.${name}`,
                 Object.values(table.fks).map(
                     fk => `    ADD CONSTRAINT ${fk.name} FOREIGN KEY (${fk.column}) REFERENCES ${fk.table}(uuid)`
@@ -276,14 +270,14 @@ export class Version {
     truncate() : Task {
         return (
             new Task("SQL TRUNCATE ALL TABLES of v"+this.version)
-            .addStep("TRUNCATE ALL KNOWN TABLES", () => this.queryEachTable(name => [`TRUNCATE TABLE ${this.schema}.${name} CASCADE;`]))
+            .addStep("TRUNCATE ALL KNOWN TABLES", db => this.queryEachTable(db, name => [`TRUNCATE TABLE ${this.schema}.${name} CASCADE;`]))
         );
     }
 
     drop_all() : Task {
         return (
             new Task("SQL DROP ALL TABLES of v"+this.version)
-            .addStep("DROP ALL KNOWN TABLES", () => this.queryEachTable(name => [`DROP TABLE ${this.schema}.${name} CASCADE;`]))
+            .addStep("DROP ALL KNOWN TABLES", db => this.queryEachTable(db, name => [`DROP TABLE ${this.schema}.${name} CASCADE;`]))
         );
     }
 
@@ -338,7 +332,7 @@ export class Version {
 
         const task = new Task(`SQL ${upgrade ? "Upgrade" : "Downgrade"} to v${this.version}`);
         if(diff.createTables.length > 0) {
-            task.addStep("Migration create tables", () => this.query(
+            task.addStep("Migration create tables", db => this.query(db, 
                 diff.createTables.map(table => [
                     `CREATE TABLE ${this.schema}.${table.name} (`,
                     Object.entries(table.columns).map(([k, v]) => `    ${k} ${v}`).join(',\n'),
@@ -347,7 +341,7 @@ export class Version {
             ));
         }
         if(drop_constraints > 0 || add_columns > 0 || alter_columns > 0) {
-            task.addStep("Migration alter tables (open)", async () => {
+            task.addStep("Migration alter tables (open)", async db => {
                 for(const table of diff.alterTables) {
                     if(table.add + table.alter + table.dropFKs.length === 0) continue;
                     const query = [
@@ -358,15 +352,15 @@ export class Version {
                     ];
                     const last = query.length - 1;
                     query[last] = query[last].replace(/,$/, ';');
-                    await this.query(query);
+                    await this.query(db, query);
                 }
             });
         }
         if(diff.migration && diff.migration.length > 0) {
-            task.addStep("Migration run transform", () => this.query(diff.migration as string[]));
+            task.addStep("Migration run transform", db => this.query(db, diff.migration as string[]));
         }
         if(add_constraints > 0 || drop_columns > 0) {
-            task.addStep("Migration alter tables (close)", async () => {
+            task.addStep("Migration alter tables (close)", async db => {
                 for(const table of diff.alterTables) {
                     if(table.drop + table.addFKs.length === 0) continue;
                     const query = [
@@ -380,12 +374,12 @@ export class Version {
                     ];
                     const last = query.length - 1;
                     query[last] = query[last].replace(/,$/, ';');
-                    await this.query(query);
+                    await this.query(db, query);
                 }
             });
         }
         if(diff.dropTables.length > 0) {
-            task.addStep("Migration drop tables", () => this.query(
+            task.addStep("Migration drop tables", db => this.query(db, 
                 diff.dropTables.map(table => `DROP TABLE ${this.schema}.${table.name};`)
             ));
         }
@@ -461,33 +455,26 @@ export class Version {
         }
     }
 
-    private async queryEachTable(fn: (name: string, table: Table) => string[], check: (t: Table) => boolean = $ => true) {
+    private async queryEachTable(db: Queryable | undefined, fn: (name: string, table: Table) => string[], check: (t: Table) => boolean = $ => true) {
         for(const name in this.tables){
             const table = this.tables[name];
             if(check(table)) {
-                await this.query(fn(name, table));
+                await this.query(db, fn(name, table));
             }
         }
     }
 
-    private async query(query: string[]) {
+    private async query(db: Queryable | undefined, query: string[]) {
+        if(!db) throw new Error("This step needs a database connection");
         const str = query.join('\n');
         Logger.debug(str);
         let success = false;
         try {
-            await this.pool?.query(str);
+            await db.query(str);
             success = true;
         } finally {
             if(!success) Logger.error(str);
         }
-    }
-
-    private getBooleans(model: Model) {
-        const booleans = Object.entries(model.fields).filter(([_, v]) => v == "boolean");
-        if(!model.entity.extends) return booleans;
-
-        const parent = this.getBooleans(this.models[model.entity.extends]) as string[];
-        return [...booleans, ...parent];
     }
 
     private generateUUIDTypeDefs() {

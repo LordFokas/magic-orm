@@ -18,5 +18,5 @@ declare global {
 Promise.prototype.first = async function first<T>(this: Promise<T>, fallback?: Member<T>): Promise<Member<T>|null>{
 	const array:T = await this;
 	if(!Array.isArray(array)) throw new ORMError.InvalidState("Called first on a Promise not of type Promise<any[]>");
-	return (array.length > 0) ? array[0] : (fallback || null);
+	return (array.length > 0) ? array[0] : (fallback ?? null);
 }

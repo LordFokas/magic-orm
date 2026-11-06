@@ -9,7 +9,6 @@ interface BaseConfig {
 	$sql: {
 		table: string
 		uuidsize: UUIDSize
-		booleans: string[]
 		order?: string[]
 	}
 	prefix: NS
